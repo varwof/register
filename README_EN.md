@@ -339,3 +339,7 @@ for _, cap := range capabilities {
     }
 }
 ```
+
+## License
+
+Apache-2.0
