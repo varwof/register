@@ -1,0 +1,428 @@
+{
+  "scheme_id": "std/database-v1",
+  "name": "Standard Database Capabilities (v1)",
+  "version": "1.0.0",
+  "description": "Standard semantics for database access capabilities: three levels of restriction - tables (object level), columns (column level), and row filtering via WHERE (row level); any database engine can implement this contract through an adapter",
+  "vendor": "std",
+  "product": "database-v1",
+  "author": "varwof (open ecosystem)",
+  "license": "Apache-2.0",
+  "homepage": "https://varwof.com/register/docs/database-v1",
+  "capabilities": [
+    {
+      "id": "query:SELECT",
+      "description": "Read-only query: execute SELECT within the authorized scope",
+      "summary": "Read data from authorized tables within the authorized column and row-filter scope",
+      "usage": "Data analysis, reporting, auditing, business queries",
+      "when_not": "Must not be granted for write operations, unauthorized tables/columns, or missing row filters (multi-tenant data)",
+      "examples": [
+        "SELECT id,name FROM customers WHERE tenant_id='org-a' LIMIT 100"
+      ],
+      "params_schema": {
+        "type": "object",
+        "required": [
+          "tables",
+          "columns"
+        ],
+        "properties": {
+          "tables": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "maxItems": 32,
+            "uniqueItems": true
+          },
+          "columns": {
+            "type": "object",
+            "description": "Table -> list of allowed columns; '*' means all columns",
+            "additionalProperties": {
+              "oneOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "uniqueItems": true
+                },
+                {
+                  "const": "*"
+                }
+              ]
+            }
+          },
+          "filter_columns": {
+            "type": "object",
+            "description": "Columns usable only in WHERE, not returned (e.g. tenant_id)",
+            "additionalProperties": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "uniqueItems": true
+            }
+          },
+          "row_filter": {
+            "type": "object",
+            "description": "Table -> row-level filter (structured predicate; raw SQL prohibited)",
+            "additionalProperties": {
+              "$ref": "#/$defs/filter"
+            }
+          },
+          "limit": {
+            "type": "object",
+            "properties": {
+              "max": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 100000
+              }
+            },
+            "required": [
+              "max"
+            ]
+          },
+          "aggregate": {
+            "type": "boolean",
+            "description": "true = allow aggregation (GROUP BY/aggregate functions), default false"
+          }
+        },
+        "$defs": {
+          "filter": {
+            "oneOf": [
+              {
+                "type": "object",
+                "required": [
+                  "column",
+                  "op",
+                  "value"
+                ],
+                "properties": {
+                  "column": {
+                    "type": "string"
+                  },
+                  "op": {
+                    "enum": [
+                      "=",
+                      "!=",
+                      "<",
+                      "<=",
+                      ">",
+                      ">=",
+                      "in",
+                      "not in",
+                      "between",
+                      "like",
+                      "is null",
+                      "is not null"
+                    ]
+                  },
+                  "value": {}
+                }
+              },
+              {
+                "type": "object",
+                "required": [
+                  "and"
+                ],
+                "properties": {
+                  "and": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                      "$ref": "#/$defs/filter"
+                    }
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "required": [
+                  "or"
+                ],
+                "properties": {
+                  "or": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                      "$ref": "#/$defs/filter"
+                    }
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "required": [
+                  "not"
+                ],
+                "properties": {
+                  "not": {
+                    "$ref": "#/$defs/filter"
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "query:INSERT",
+      "description": "Write: execute INSERT within the authorized tables and columns",
+      "summary": "Insert data into authorized tables, only into authorized columns",
+      "usage": "Business data entry, event persistence",
+      "when_not": "Must not be granted for unauthorized tables/columns or bulk loading (use a dedicated import capability)",
+      "examples": [
+        "INSERT INTO orders (id, amount) VALUES (?, ?)"
+      ],
+      "params_schema": {
+        "type": "object",
+        "required": [
+          "tables",
+          "columns"
+        ],
+        "properties": {
+          "tables": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "maxItems": 32,
+            "uniqueItems": true
+          },
+          "columns": {
+            "type": "object",
+            "additionalProperties": {
+              "oneOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "uniqueItems": true
+                },
+                {
+                  "const": "*"
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "query:UPDATE",
+      "description": "Update: row-level filter is required to prevent full-table or unauthorized-row updates",
+      "summary": "Update data within the authorized column and row-filter scope",
+      "usage": "Status transitions, corrections, business changes",
+      "when_not": "Must not be granted without a row filter or when updating unauthorized columns",
+      "examples": [
+        "UPDATE orders SET status='paid' WHERE id=? AND tenant_id='org-a'"
+      ],
+      "params_schema": {
+        "type": "object",
+        "required": [
+          "tables",
+          "columns",
+          "row_filter"
+        ],
+        "properties": {
+          "tables": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "maxItems": 32,
+            "uniqueItems": true
+          },
+          "columns": {
+            "type": "object",
+            "additionalProperties": {
+              "oneOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "uniqueItems": true
+                },
+                {
+                  "const": "*"
+                }
+              ]
+            }
+          },
+          "row_filter": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/$defs/filter"
+            }
+          }
+        },
+        "$defs": {
+          "filter": {
+            "type": "object",
+            "description": "Same Filter grammar as query:SELECT"
+          }
+        }
+      }
+    },
+    {
+      "id": "query:DELETE",
+      "description": "Delete: row-level filter is required to prevent full-table or unauthorized-row deletion",
+      "summary": "Only delete rows matching the row filter",
+      "usage": "Data cleanup, compliance-driven deletion",
+      "when_not": "Must not be granted without a row filter",
+      "examples": [
+        "DELETE FROM logs WHERE ts < ? AND tenant_id='org-a'"
+      ],
+      "params_schema": {
+        "type": "object",
+        "required": [
+          "tables",
+          "row_filter"
+        ],
+        "properties": {
+          "tables": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "maxItems": 32,
+            "uniqueItems": true
+          },
+          "row_filter": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/$defs/filter"
+            }
+          }
+        },
+        "$defs": {
+          "filter": {
+            "type": "object",
+            "description": "Same Filter grammar as query:SELECT"
+          }
+        }
+      }
+    },
+    {
+      "id": "query:EXECUTE",
+      "description": "Execute: call authorized stored procedures/functions",
+      "summary": "Execute stored procedures or functions on the allowlist",
+      "usage": "Wrap business transactions, batch jobs",
+      "when_not": "Must not be granted if the procedure is not on the allowlist or accesses unauthorized objects internally",
+      "examples": [
+        "CALL sp_reconcile('org-a')"
+      ],
+      "params_schema": {
+        "type": "object",
+        "required": [
+          "procedures"
+        ],
+        "properties": {
+          "procedures": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "uniqueItems": true
+          }
+        }
+      }
+    },
+    {
+      "id": "admin:DDL",
+      "description": "Schema change: create/alter/drop tables (high risk, must be least-privilege)",
+      "summary": "Apply schema changes to allowlisted tables",
+      "usage": "Release migrations, initial table creation",
+      "when_not": "Must not be granted when production schema changes should be handled by a dedicated migration-tool capability",
+      "examples": [
+        "ALTER TABLE customers ADD COLUMN vip BOOLEAN"
+      ],
+      "params_schema": {
+        "type": "object",
+        "required": [
+          "operations",
+          "tables"
+        ],
+        "properties": {
+          "operations": {
+            "type": "array",
+            "items": {
+              "enum": [
+                "create",
+                "alter",
+                "drop"
+              ]
+            },
+            "minItems": 1,
+            "uniqueItems": true
+          },
+          "tables": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "uniqueItems": true
+          }
+        }
+      }
+    },
+    {
+      "id": "admin:TRUNCATE",
+      "description": "Truncate: high-risk operation, allowlisted tables only",
+      "summary": "Truncate allowlisted tables",
+      "usage": "Test environment reset, cleanup after archiving",
+      "when_not": "Must be rejected in production or when foreign keys reference the table",
+      "examples": [
+        "TRUNCATE TABLE staging_import"
+      ],
+      "params_schema": {
+        "type": "object",
+        "required": [
+          "tables"
+        ],
+        "properties": {
+          "tables": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "uniqueItems": true
+          }
+        }
+      }
+    }
+  ],
+  "roles": {
+    "readonly": {
+      "display_name": "Read-only Analyst",
+      "profiles": [
+        "analyst"
+      ],
+      "grants": [
+        "query:SELECT"
+      ]
+    },
+    "operator": {
+      "display_name": "Operator",
+      "profiles": [
+        "dba"
+      ],
+      "grants": [
+        "query:SELECT",
+        "query:UPDATE",
+        "query:DELETE",
+        "admin:TRUNCATE"
+      ]
+    }
+  }
+}

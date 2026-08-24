@@ -12,7 +12,7 @@ import (
 // scheme is loadable from the capability data tree, carries structured
 // params_schema, and its capabilities validate.
 func TestDatabaseV1Registered(t *testing.T) {
-	reg, err := LoadFromDir(filepath.Join("..", "capability", "data"))
+	reg, err := LoadFromDir(filepath.Join("testdata", "capability"))
 	if err != nil {
 		t.Fatal(err)
 	}
