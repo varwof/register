@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Jijie Wei (varwof)
+// SPDX-License-Identifier: Apache-2.0
+
 package ruleexec
 
 import (
@@ -6,8 +9,8 @@ import (
 	"io/fs"
 	"path/filepath"
 
-	pki "github.com/varwof/types"
 	"github.com/varwof/register"
+	pki "github.com/varwof/types"
 )
 
 // LoadRulePlugin loads a published (PKCS#7 signed) rule file and

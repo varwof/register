@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Jijie Wei (varwof)
+// SPDX-License-Identifier: Apache-2.0
+
 package ruleexec
 
 import (
@@ -9,8 +12,8 @@ import (
 	"strings"
 	"testing"
 
-	pki "github.com/varwof/types"
 	"github.com/varwof/register"
+	pki "github.com/varwof/types"
 )
 
 func noopHandler(op string, vars, req map[string]any) (map[string]any, error) {
