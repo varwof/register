@@ -1,0 +1,22 @@
+# Build artifacts
+/rule-exec
+/*.exe
+*.test
+
+# Test artifacts
+*.pem
+*.key
+*.db
+*.db-wal
+*.db-shm
+*.p7s
+
+# OS
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+
+# IDE
+.idea/
+.vscode/

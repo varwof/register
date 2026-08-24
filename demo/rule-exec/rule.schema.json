@@ -1,0 +1,194 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://varwof.com/register/schemas/rule.schema.json",
+  "title": "AIC Rule File",
+  "type": "object",
+  "required": [
+    "rule_id",
+    "version",
+    "scheme",
+    "capability",
+    "params"
+  ],
+  "properties": {
+    "rule_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "scheme": {
+      "type": "string",
+      "pattern": "^[a-z0-9-]+/[a-z0-9-]+$"
+    },
+    "capability": {
+      "type": "string",
+      "minLength": 1
+    },
+    "params": {
+      "type": "object"
+    },
+    "conditions": {
+      "$ref": "#/definitions/condition"
+    },
+    "roles": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "constraints": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/constraint"
+      }
+    },
+    "flow": {
+      "$ref": "#/definitions/flow"
+    }
+  },
+  "definitions": {
+    "condition": {
+      "type": "object",
+      "required": [
+        "op"
+      ],
+      "properties": {
+        "op": {
+          "type": "string",
+          "enum": [
+            "and",
+            "or",
+            "not",
+            "eq",
+            "neq",
+            "lt",
+            "lte",
+            "gt",
+            "gte",
+            "in",
+            "contains",
+            "between",
+            "time-in",
+            "is-null"
+          ]
+        },
+        "path": {
+          "type": "string"
+        },
+        "value": {},
+        "window": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/condition"
+          }
+        }
+      }
+    },
+    "constraint": {
+      "type": "object",
+      "required": [
+        "scheme",
+        "id"
+      ],
+      "properties": {
+        "scheme": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "params": {}
+      }
+    },
+    "step": {
+      "type": "object",
+      "required": [
+        "kind"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "op",
+            "if",
+            "while",
+            "for",
+            "retry",
+            "seq",
+            "break",
+            "continue"
+          ]
+        },
+        "op": {
+          "type": "string"
+        },
+        "condition": {
+          "$ref": "#/definitions/condition"
+        },
+        "then": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/step"
+          }
+        },
+        "else": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/step"
+          }
+        },
+        "var": {
+          "type": "string"
+        },
+        "from": {
+          "type": "integer"
+        },
+        "to": {
+          "type": "integer"
+        },
+        "max_retries": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "steps": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/step"
+          }
+        },
+        "do": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/step"
+          }
+        }
+      }
+    },
+    "flow": {
+      "type": "object",
+      "properties": {
+        "steps": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/step"
+          }
+        }
+      }
+    }
+  }
+}

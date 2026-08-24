@@ -1,0 +1,7 @@
+{
+  "max_steps": 10000,
+  "max_iterations": 1000,
+  "max_depth": 64,
+  "max_nesting": 64,
+  "wall_clock_ms": 100
+}
