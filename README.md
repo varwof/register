@@ -2,6 +2,8 @@
 
 > Capability Registry — standard capability definition, validation, and authz.json generation for fine-grained AI Agent permission control.
 
+> ⚠️ **Preview** — Not for production use. APIs and features may change before official release.
+
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 [![Go Reference](https://pkg.go.dev/badge/github.com/varwof/register)](https://pkg.go.dev/github.com/varwof/register)
 
