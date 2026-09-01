@@ -110,6 +110,11 @@ func validateClaimParams(def *SchemeDefinition, c CapabilityClaim) error {
 	if entry == nil {
 		return fmt.Errorf("capability %q not found", c.Capability)
 	}
+	// Structured (JSON Schema) parameters take precedence when the capability
+	// declares a params_schema (e.g. std/database-v1).
+	if len(entry.ParamsSchema) > 0 {
+		return validateParamsSchema(entry.ParamsSchema, c.Parameters)
+	}
 	for k := range c.Parameters {
 		if _, ok := entry.Parameters[k]; !ok {
 			return fmt.Errorf("unknown parameter %q for %s (allowed: %s)",
