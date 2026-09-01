@@ -111,6 +111,15 @@ func main() {
 			if redundantKey[key] || missingKey[key] {
 				continue
 			}
+			// P1-4: pin the scheme version the claim was validated against, so
+			// the claims->AIC chain records which registry revision authorized
+			// the capability. The digest of this file is anchored into the
+			// signed DelegationAuthorization by the client.
+			if v.SchemeVersion == "" {
+				if def, ok := reg.Get(v.SchemeID); ok {
+					v.SchemeVersion = def.Version
+				}
+			}
 			minimalSet = append(minimalSet, v)
 		}
 		out, err := json.MarshalIndent(minimalSet, "", "  ")
