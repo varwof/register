@@ -12,10 +12,11 @@ import (
 
 // CapabilityClaim is a single AI-generated capability claim (pending validation/minimal privilege detection).
 type CapabilityClaim struct {
-	SchemeID   string         `json:"scheme_id"`  // vendor/product
-	Capability string         `json:"capability"` // capability_id (may contain wildcards)
-	Parameters map[string]any `json:"parameters,omitempty"`
-	Rationale  string         `json:"rationale,omitempty"` // Authorization rationale from AI
+	SchemeID      string         `json:"scheme_id"`  // vendor/product
+	Capability    string         `json:"capability"` // capability_id (may contain wildcards)
+	Parameters    map[string]any `json:"parameters,omitempty"`
+	Rationale     string         `json:"rationale,omitempty"`      // Authorization rationale from AI
+	SchemeVersion string         `json:"scheme_version,omitempty"` // pinned scheme version (P1-4)
 }
 
 // ClaimResult is the validation result for a single claim.
@@ -83,6 +84,13 @@ func (r *Registry) ValidateClaims(claims []CapabilityClaim) []ClaimResult {
 			results = append(results, res)
 			continue
 		}
+		// P1-4: when a claim pins a scheme version, it must match the loaded scheme.
+		if c.SchemeVersion != "" && c.SchemeVersion != def.Version {
+			res.Error = fmt.Sprintf("scheme version mismatch: claim pins %q, registry has %q",
+				c.SchemeVersion, def.Version)
+			results = append(results, res)
+			continue
+		}
 		// Parameter validity: claimed parameters must be within the capability's parameters definition
 		if err := validateClaimParams(def, c); err != nil {
 			res.Error = err.Error()
@@ -97,9 +105,6 @@ func (r *Registry) ValidateClaims(claims []CapabilityClaim) []ClaimResult {
 
 // validateClaimParams validates that all claimed parameters are within the capability definition.
 func validateClaimParams(def *SchemeDefinition, c CapabilityClaim) error {
-	if len(c.Parameters) == 0 {
-		return nil
-	}
 	var entry *CapabilityEntry
 	for i := range def.Capabilities {
 		if def.Capabilities[i].ID == c.Capability {
@@ -108,17 +113,34 @@ func validateClaimParams(def *SchemeDefinition, c CapabilityClaim) error {
 		}
 	}
 	if entry == nil {
+		// A wildcard claim (e.g. "ca:*") with no parameters has no single
+		// concrete entry to validate parameters against; legality was already
+		// checked by capability matching. Only parameterized claims must map
+		// to a concrete capability definition.
+		if len(c.Parameters) == 0 {
+			return nil
+		}
 		return fmt.Errorf("capability %q not found", c.Capability)
 	}
 	// Structured (JSON Schema) parameters take precedence when the capability
-	// declares a params_schema (e.g. std/database-v1).
+	// declares a params_schema (e.g. std/database-v1). Its own required
+	// keywords are enforced by the schema validator.
 	if len(entry.ParamsSchema) > 0 {
 		return validateParamsSchema(entry.ParamsSchema, c.Parameters)
 	}
-	for k := range c.Parameters {
-		if _, ok := entry.Parameters[k]; !ok {
+	// Flat parameters: declared-required params may not be omitted even when
+	// the claim carries no parameters at all (P0-1).
+	if err := validateFlatParamRequired(entry, c.Parameters); err != nil {
+		return err
+	}
+	for k, v := range c.Parameters {
+		pd, ok := entry.Parameters[k]
+		if !ok {
 			return fmt.Errorf("unknown parameter %q for %s (allowed: %s)",
-				k, c.Capability, paramKeys(entry.Parameters))
+				k, c.Capability, strings.Join(paramKeys(entry.Parameters), ", "))
+		}
+		if err := validateFlatParamValue(pd, k, v); err != nil {
+			return fmt.Errorf("parameter %q for %s: %w", k, c.Capability, err)
 		}
 	}
 	return nil
