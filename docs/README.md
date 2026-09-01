@@ -79,7 +79,7 @@ go run ./demo search query
 
 ## 签名验证
 
-规则文件通过 PKCS#7 签名保障不可篡改：
+规则文件通过 PKCS#7 签名提供完整性校验：
 
 ```bash
 # 验证签名
