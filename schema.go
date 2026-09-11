@@ -213,9 +213,15 @@ func LoadAllSchemes(root string) (map[string]*SchemeDefinition, error) {
 		if info.IsDir() {
 			return nil
 		}
-		// match v*.json files
+		// Same filter as loader.go: `_`-prefixed trees (e.g. _vectors/) hold
+		// tooling data, and only `v<digit>...json` files are scheme
+		// definitions.  Without this, `gen-docs -all <data root>` fails on
+		// data/_vectors/clc-v1/vectors.json.
+		if isIgnoredDataPath(path) {
+			return nil
+		}
 		base := filepath.Base(path)
-		if !strings.HasPrefix(base, "v") || !strings.HasSuffix(base, ".json") {
+		if filepath.Ext(path) != ".json" || !isVersionFileName(base) {
 			return nil
 		}
 		def, err := LoadScheme(path)
