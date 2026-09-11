@@ -93,7 +93,16 @@ func NewRegistry() *Registry
 func NewRegistryWithEmbedded() (*Registry, error)
 ```
 
-创建预加载嵌入式能力定义的注册中心。
+**已移除**：嵌入式能力数据不再随本模块发布，调用恒返回错误。
+
+### NewRegistryFromDisk(dir string) (*Registry, error)
+
+```go
+func NewRegistryFromDisk(dir string) (*Registry, error)
+```
+
+从磁盘上的 capability 数据目录创建预加载的注册中心
+（目录结构 `root/vendor/product/v*.json`）。
 
 ### Register(def *SchemeDefinition)
 
@@ -175,7 +184,8 @@ func LoadFromDir(root string) (map[string]*SchemeDefinition, error)
 func LoadEmbedded() (map[string]*SchemeDefinition, error)
 ```
 
-从嵌入式文件加载。
+**已移除**：能力数据已拆到独立的 capability 模块，调用恒返回错误；
+请改用 `LoadFromDir` / `LoadFromBoth` 指向磁盘目录。
 
 ### LoadFromBoth(diskDir string) (map[string]*SchemeDefinition, error)
 
@@ -183,7 +193,7 @@ func LoadEmbedded() (map[string]*SchemeDefinition, error)
 func LoadFromBoth(diskDir string) (map[string]*SchemeDefinition, error)
 ```
 
-嵌入式优先，磁盘覆盖。
+磁盘目录是唯一来源（嵌入式已移除）；空目录直接报错。
 
 ## Signing
 

@@ -49,20 +49,21 @@ Agent/网关验证 .p7s → 信任
 ## 目录结构
 
 ```
-register/
-├── data/                        ← scheme JSON 定义（纯数据）
-│   ├── varwof/                  # 自有产品
-│   │   ├── core/v1.json
-│   │   ├── gateway/v1.json
-│   │   ├── constraint/v1.json
-│   │   └── demo-mysql/v1/v1.json
-│   ├── oracle/                  # 第三方
-│   │   └── mysql/v1.json
-│   └── x-vendor/                # 私有扩展
-│       └── acme/v1.json
-├── loader.go                    ← Go 代码（go:embed data/）
+capability/data/                 ← scheme JSON 定义（纯数据，独立 capability 模块）
+├── varwof/                      # 自有产品
+│   ├── core/v1.json
+│   ├── gateway/v1.json
+│   ├── constraint/v1.json
+│   └── ...
+├── oracle/mysql/v1.json         # 第三方
+├── x-vendor/acme/v1.json        # 私有扩展
+└── _vectors/                    ← 工具数据（loader 忽略，不参与注册）
+
+register/                        ← Go 代码（磁盘目录加载，嵌入式已移除）
+├── loader.go
 ├── schema.go
 ├── registry.go
+├── semantics/ / ruleexec/
 └── ...
 ```
 
@@ -84,7 +85,7 @@ register/
 ### 目录结构
 
 ```
-register/data/{vendor}/{product}-v{major}/
+capability/data/{vendor}/{product}-v{major}/
 ├── v1.json    ← 小版本 1（初始）
 ├── v2.json    ← 小版本 2（向后兼容，新增能力/参数）
 └── v3.json    ← 小版本 3（向后兼容）
@@ -126,8 +127,8 @@ register/data/{vendor}/{product}-v{major}/
 ### 公共标准（v1 方案）
 
 ```bash
-mkdir -p register/data/{vendor}/{product}-v1
-cat > register/data/{vendor}/{product}-v1/v1.json << 'EOF'
+mkdir -p capability/data/{vendor}/{product}-v1
+cat > capability/data/{vendor}/{product}-v1/v1.json << 'EOF'
 {
   "scheme_id": "{vendor}/{product}-v1",
   ...
@@ -138,8 +139,8 @@ EOF
 ### 大版本升级（breaking change）
 
 ```bash
-mkdir -p register/data/{vendor}/{product}-v2
-cat > register/data/{vendor}/{product}-v2/v1.json << 'EOF'
+mkdir -p capability/data/{vendor}/{product}-v2
+cat > capability/data/{vendor}/{product}-v2/v1.json << 'EOF'
 {
   "scheme_id": "{vendor}/{product}-v2",
   ...
@@ -150,7 +151,7 @@ EOF
 ### 小版本升级（向后兼容）
 
 ```bash
-cat > register/data/{vendor}/{product}-v1/v2.json << 'EOF'
+cat > capability/data/{vendor}/{product}-v1/v2.json << 'EOF'
 {
   "scheme_id": "{vendor}/{product}-v1",
   "version": "1.2.0",
@@ -164,8 +165,8 @@ EOF
 ### 私有扩展
 
 ```bash
-mkdir register/data/x-{vendor}/{product}-v1
-cat > register/data/x-{vendor}/{product}-v1/v1.json << 'EOF'
+mkdir capability/data/x-{vendor}/{product}-v1
+cat > capability/data/x-{vendor}/{product}-v1/v1.json << 'EOF'
 {
   "scheme_id": "x-{vendor}/{product}-v1",
   ...

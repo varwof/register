@@ -1,5 +1,7 @@
 # 开发者文档
 
+> English entry points: [README.md](../README.md), [docs/toolchain_EN.md](../docs/toolchain_EN.md), [docs/rule-authoring_EN.md](../docs/rule-authoring_EN.md).
+
 ## 目录结构
 
 ```
@@ -7,17 +9,27 @@ register/
 ├── schema.go          # 能力定义结构体
 ├── registry.go        # 注册/查询/验证
 ├── validator.go       # 权限校验引擎
-├── loader.go          # 嵌入式/磁盘加载器
+├── mincap.go / flatparams.go / params_validate.go
+├── genauthz.go / gendocs.go
+├── loader.go          # 磁盘目录加载器（嵌入式已移除）
 ├── sign.go            # PKCS#7 签名/验证
-├── demo/main.go       # 演示程序
+│
+├── semantics/         # 判定层 CLC-v1（文法/蕴含/交集/判定/规范码）
+├── ruleexec/          # 执行层（规则/条件/流程/预算/SQL/发布/网关适配）
+├── internal/rulesigner/  # 规则签名证书工具（demo 与测试用）
+│
+├── cmd/               # 见文末《命令行工具》表（7 个）
+│                      # + vectors-run（CLC 一致性向量 runner）
+├── demo/main.go       # 能力演示程序（-data <能力数据目录>）
+├── demo/rule-exec/    # 规则执行端到端 demo + rule.schema.json + TS 镜像
+├── testdata/          # 测试夹具（capability 数据）
 │
 ├── docs/              # 用户文档
-├── dev-docs/          # 开发者文档（本目录）
-│
-├── varwof/            # 自有产品能力定义
-├── oracle/            # 第三方产品
-└── x-vendor/          # 私有扩展示例
+└── dev-docs/          # 开发者文档（本目录）
 ```
+
+> 能力定义数据（`<vendor>/<product>/v*.json`）**不在本仓库**：已拆到独立的
+> `capability` 模块，默认相对路径为 `../capability/data`。
 
 ## 开发指南
 
@@ -63,18 +75,25 @@ go build ./...
 go vet ./...
 ```
 
-### 嵌入式加载
+### 能力数据来源（磁盘目录）
 
-新能力定义会自动通过 `go:embed` 嵌入二进制。更新 `loader.go` 中的 embed 指令：
+嵌入式加载已移除：`LoadEmbedded` / `NewRegistryWithEmbedded` 调用即报错，
+能力数据一律从磁盘目录读取。
 
 ```go
-//go:embed varwof/core/*.json varwof/gateway/*.json varwof/constraint/*.json
-//go:embed oracle/mysql/*.json
-//go:embed x-vendor/acme/*.json
-var embeddedSchemes embed.FS
+reg, err := register.NewRegistryFromDisk("../capability/data")
 ```
 
-添加新产品后，更新此指令。
+命令行等价方式：
+
+```bash
+export CAPABILITY_DIR=../capability/data
+go run ./demo -data $CAPABILITY_DIR list
+```
+
+loader 只接受 `v` 后跟数字开头的 JSON（`v1.json`、`v1.0.json`）作为方案定义；
+`default.json`、`vectors.json` 等非方案文件会被跳过，`_` 开头的目录
+（如 `_vectors/`）整个忽略。
 
 ## 代码规范
 
@@ -96,6 +115,26 @@ var embeddedSchemes embed.FS
 - fix: 修复能力定义
 - docs: 更新文档
 - refactor: 重构代码
+
+## 命令行工具与流程
+
+工具表、端到端流程图与门禁矩阵是**唯一一份**，在 [`../docs/toolchain.md`](../docs/toolchain.md)；
+规则文件怎么写见 [`../docs/rule-authoring.md`](../docs/rule-authoring.md)。
+
+## 判定层与执行层
+
+一门语言两层，职责不重叠（详见 `docs/capability-language-layers.md`）：
+
+| 层 | 包 | 职责 |
+|----|----|------|
+| 判定层 | `semantics/`（CLC-v1） | 能力文法、蕴含、参数域、交集、判定与规范码；纯函数、fail-closed |
+| 执行层 | `ruleexec/` | 规则模型、运行上下文条件、`op \| if \| seq` 流程、预算、SQL、发布与验签 |
+
+两条禁令：CLC 不得引入控制流；ruleexec 不得自行实现能力子集/deny 语义
+（必须调用 CLC）。
+
+条件语义与 SQL 映射见 `docs/condition-semantics.md`；执行语言刻意不含
+循环、重试、`time-in`、`contains`。
 
 ## 相关项目
 

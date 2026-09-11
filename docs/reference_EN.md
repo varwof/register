@@ -93,7 +93,17 @@ Creates an empty registry.
 func NewRegistryWithEmbedded() (*Registry, error)
 ```
 
-Creates a registry preloaded with embedded capability definitions.
+**Removed**: embedded capability data is no longer shipped with this module;
+the call always returns an error.
+
+### NewRegistryFromDisk(dir string) (*Registry, error)
+
+```go
+func NewRegistryFromDisk(dir string) (*Registry, error)
+```
+
+Creates a registry preloaded from a capability data directory on disk
+(layout: `root/vendor/product/v*.json`).
 
 ### Register(def *SchemeDefinition)
 
@@ -175,7 +185,9 @@ Loads all capability JSON files from a directory tree.
 func LoadEmbedded() (map[string]*SchemeDefinition, error)
 ```
 
-Loads from embedded files.
+**Removed**: capability data now lives in the separate capability module; the
+call always returns an error.  Use `LoadFromDir` / `LoadFromBoth` with a disk
+directory instead.
 
 ### LoadFromBoth(diskDir string) (map[string]*SchemeDefinition, error)
 
@@ -183,7 +195,8 @@ Loads from embedded files.
 func LoadFromBoth(diskDir string) (map[string]*SchemeDefinition, error)
 ```
 
-Embedded first, disk overrides.
+The disk directory is the only source (embedded data was removed); an empty
+directory is an error.
 
 ## Signing
 

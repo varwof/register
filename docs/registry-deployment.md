@@ -1,6 +1,7 @@
 # 全球能力注册中心部署方案（存档稿）
 
-> 状态：**待仓库创建后执行**（2026-08-24 存档）
+> 状态：**存档稿**（2026-08-24）——能力数据仓库已拆分建立为 `varwof/capability`
+> （`data/` 树）；CI 自动发布 + Cloudflare Pages 分发部分待执行。
 > 目标：基于 GitHub（PR 治理）+ Cloudflare（静态分发）+ PKCS#7（验签消费），
 > 实现"全球互通、保持开放"的能力注册中心。
 > 前置：varwof.com / varwof.org 已在 Cloudflare 托管；可创建公开 GitHub 仓库。

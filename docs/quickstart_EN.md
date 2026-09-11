@@ -13,7 +13,8 @@ import (
 )
 
 func main() {
-    reg, _ := register.NewRegistryWithEmbedded()
+    // Capability data lives in the separate capability module (go:embed removed).
+    reg, _ := register.NewRegistryFromDisk("../capability/data")
 
     // List all products
     fmt.Print(reg.Summary())
@@ -74,23 +75,23 @@ if len(denied) > 0 {
 ```bash
 # Vendor signs capability.json
 openssl pkcs7 -sign \
-  -in varwof/core/v1.json \
-  -out varwof/core/v1.json.p7s \
+  -in ../capability/data/varwof/core/v1.json \
+  -out ../capability/data/varwof/core/v1.json.p7s \
   -signer product.pem \
   -certfile chain.pem \
   -nodetach
 
 # Verify the signature
 openssl smime -verify \
-  -in varwof/core/v1.json.p7s \
-  -content varwof/core/v1.json \
+  -in ../capability/data/varwof/core/v1.json.p7s \
+  -content ../capability/data/varwof/core/v1.json \
   -CAfile pki/root-ca.pem
 ```
 
 ```go
 // Go verification
 trustRoots, _ := register.LoadTrustRoots("pki/")
-err := register.VerifyCapabilityPKCS7("varwof/core/v1.json", trustRoots)
+err := register.VerifyCapabilityPKCS7("../capability/data/varwof/core/v1.json", trustRoots)
 if err != nil {
     fmt.Println("Signature verification failed:", err)
 }

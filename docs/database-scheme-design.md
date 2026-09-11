@@ -111,16 +111,21 @@ data/std/database-v1/
 （grant/params 中的条件表达式）。
 
 - 推荐：**结构化条件 AST**（JSON 操作符语言），与 row_filter 谓词同构：
-  `and / or / not / eq / neq / lt / lte / gt / gte / in / contains / between /
-  time-in / path（指向 request context 字段）/ value（字面量）`。
+  `and / or / not / is-null / eq / neq / lt / lte / gt / gte / in / between`；
+  字段形态：`path`（指向 request context 字段）、`value`（字面量）、
+  `window`（`between` 的 `[lo, hi]`，按 AST 设计为字符串边界）。
+  比较类算子遇 null/缺失**恒为 false**，只有 `is-null` 能测"无值"；
+  不做隐式类型转换（`"500"` ≠ `500`）。
+  时间窗请改用**授权约束**（CLC §8 / constraint-v1 的 time-window）；
+  null / 类型 / 大小写规则见 [condition-semantics.md](condition-semantics.md)。
 - 示例：
 
 ```json
 "conditions": {
-  "and": [
-    { "op": "eq",      "path": "request.tenant_id", "value": "org-a" },
-    { "op": "time-in", "path": "request.time",      "window": ["08:00", "22:00"] },
-    { "op": "lte",     "path": "request.params.amount", "value": 1000 }
+  "op": "and",
+  "items": [
+    { "op": "eq",  "path": "request.tenant_id", "value": "org-a" },
+    { "op": "lte", "path": "request.params.amount", "value": 1000 }
   ]
 }
 ```
@@ -156,8 +161,9 @@ data/std/database-v1/
 
 条件语言（CEL / 结构化条件 AST）只回答"**某一步允不允许**"（布尔谓词），
 表达不了"**任务按什么顺序、在什么条件下执行哪些步骤**"——即流程控制。
-真实 Agent 任务是多步的：查询 → 判断结果 → 条件更新 → 重试 →
-等待人工审批 → 补偿/回滚。
+真实 Agent 任务是多步的：查询 → 判断结果 → 条件更新 → 等待人工审批 →
+补偿/回滚。（其中"重试"不属于执行侧语言：它留在调用方/作业编排层，每次尝试
+重新走一遍授权判定。）
 
 ### 分层澄清（关键）
 
@@ -170,23 +176,26 @@ data/std/database-v1/
   未来），与 AIC（身份/授权）分离——责任链
   Organization → Principal → Agent → **Mission/Task（流程）** → PEP。
 
-### 流程控制：Python/C 风格子集（v1 草案）
+### 流程控制：有界步骤子集（v1 定稿）
 
-目标：引入 Python/C 的基本流程控制（变量、条件、循环、函数），覆盖绝大多数
-任务编排逻辑；**安全不靠"禁止循环"，而靠"执行预算沙箱"**（见下节）。
+目标：只保留**有界且可静态判定**的构造——顺序 `seq`、条件分支 `if`、原子操作 `op`。
+**2026-09-10 起执行侧已移除循环**（`while` / `for` / `break` / `continue`），随后
+**又移除了重试**（`retry` / `max_retries`）与**迭代预算**（`max_iterations`）。
+因此一次授权最多触发每个操作执行一次（**无放大倍数**），终止性由结构保证；
+批量/迭代场景请建模为显式批处理作业，重试交由调用方并在每次尝试时重新授权。
 
-| 构造 | 说明 | 对应 Python/C |
-|------|------|----------------|
-| 变量与赋值 | 任务内局部变量，类型受限（string/int/float/bool/list/map） | `x = 1` |
-| `if / else` | 条件分支，条件可用比较/逻辑 | `if x > 0:` |
-| `while` | 条件循环 | `while cond:` |
-| `for ... in range(...)` | 有界数值循环 | `for i in range(n):` |
-| `for ... in list` | 遍历集合 | `for item in items:` |
-| `break / continue` | 循环控制 | 同 Python |
-| 函数/过程定义 | 复用逻辑，递归深度受预算限制 | `def f(x):` |
-| 内建操作 | `retry`、`timeout/deadline`、`wait/gate`（人工审批）、`on-error` | 以库/操作形式提供 |
+| 构造 | 说明 | 落地情况 |
+|------|------|----------|
+| `op` | 原子操作；**每个 op 每次授权最多执行一次**，其输出并入任务变量 | 已实现（`Step.Kind == "op"`） |
+| `if / else` | 条件分支，条件为结构化谓词 AST | 已实现（`Step.Kind == "if"`） |
+| `seq` | 顺序组合（有限树，不是循环） | 已实现（`Step.Kind == "seq"`） |
 
-v2 候选：`parallel`、`compensate/rollback`（并行与补偿事务）。
+任务变量不需要单独的赋值语句：变量只由 `op` 的输出产生（`OpHandler` 返回的
+map 并入 `FlowContext.Vars`），因此不存在"赋值改变控制流"的路径。
+
+未实现（**不在 v1**，列入 v2 候选）：`parallel`、`compensate/rollback`（并行与
+补偿事务）、`wait/gate`（人工审批）、`on-error`、`timeout/deadline`、
+函数/过程定义（会引入递归与不可静态判定的调用图）。
 
 ### 形态选项
 
@@ -200,7 +209,7 @@ v2 候选：`parallel`、`compensate/rollback`（并行与补偿事务）。
   （Bazel 的构建语言，Go 实现成熟，确定性、无 I/O、无 eval）——
   **Go 网关的首选**；浏览器端需要 WASM 或改用 AST 子集。
 - 推荐：**Go 网关用 Starlark，浏览器/纯 JSON 用结构化 AST 子集，二者语义
-  对齐（共享测试向量）**；流程控制构造（if/while/for/break/def）两边一致，
+  对齐（共享测试向量）**；流程控制构造（op/if/seq）两边一致，
   差异仅在语法（Python 风格文本 vs JSON）。
 
 ### 安全执行预算（沙箱，核心）
@@ -211,21 +220,22 @@ v2 候选：`parallel`、`compensate/rollback`（并行与补偿事务）。
 
 | 预算项 | 默认值 | 防什么 |
 |--------|--------|--------|
-| 总执行步数（每条语句/表达式计 1） | 10,000 | 无限循环、恶意长计算 |
-| 总循环迭代数（所有循环**累计**） | 1,000 | **大批量循环**（不止单循环上限；正常任务编排几乎不会超过千次，超限视为异常） |
-| 递归/调用深度 | 64 | 递归式死循环 |
+| 总执行步数（每条语句/表达式计 1） | 10,000 | 恶意超长流程（循环已移除） |
 | 语法嵌套深度 | 64 | 极端嵌套构造 |
 | 集合元素总数上限 | 10,000 | 内存爆炸 |
-| 墙钟超时（兜底） | 100 ms | 步数计数的实现偏差 |
+
+> 迭代计数（`max_iterations`）与墙钟超时（`wall_clock_ms`）已随循环/重试一并移除：
+> 前者不再有意义（无循环无重试），后者是非确定性来源（`Budget.Deadline` 保留给
+> 调用方按需显式设置，不是规范默认值）。
 
 DoS 防御要点（预算存在的根本理由）：
 
 - 预算超限即**快速失败**，不等到资源耗尽再终止；
 - 每次执行使用**独立预算**，互不共享、互不累积；
-- **静态预检**：执行前直接拒绝明显超界的循环/重试（如 `for i in 0..1e9`），零运行时成本；
+- **静态预检**：执行前直接拒绝超过预算的**嵌套深度**（循环与重试已移除，见附注），零运行时成本；
 - 单次预算再小，也要配合**并发配额**（网关 max-concurrent）防并发洪泛；
 - 规则文件受**签名保护**（未受信方无法注入规则），预算沙箱是第二道防线；
-- 步数/迭代计数必须在解释器内层逐语句计数，不可被绕过；
+- 步数与嵌套计数必须在解释器内层逐语句计数，不可被绕过（迭代预算已随重试移除）；
 - `budget_exceeded` 必须记审计，用于检测攻击模式。
 
 其余硬规则：
@@ -233,9 +243,9 @@ DoS 防御要点（预算存在的根本理由）：
 - 确定性：无时间、无随机、无网络、无 I/O、无 eval、无文件、无宿主全局访问
   （变量只能来自显式绑定的任务上下文）；
 - 禁止任意 goto / 自由跳转；
-- **循环禁止嵌套**（结构约束，静态预检拒绝）：`while/for` 不得出现在另一
-  循环体内（含经 if/retry/seq 传递）；允许 `if` 嵌套 `while`、`while` 嵌套
-  `if`——从结构上消灭"迭代爆炸"这一类攻击；
+- **循环已移除**（2026-09-10 结构决策）：执行语言不含 `while/for` 与
+  `break/continue`，因此不存在"迭代爆炸"这一攻击面；批量/迭代场景请建模为
+  显式批处理作业，而不是在授权后的执行路径里循环；
 - 预算超限 → 流程终止 + 明确错误码（如 `budget_exceeded`），**不留部分副作用**
   （按事务语义回滚已执行步骤）；
 - 流程引擎与授权检查解耦：每步执行前做 AIC 条件检查，流程层不做授权。
@@ -272,37 +282,46 @@ DoS 防御要点（预算存在的根本理由）：
      → 决策 + 审计
 ```
 
-### 规则文件示例（草稿，非定稿）
+### 规则文件示例
+
+与 `demo/rule-exec/rule.schema.json`、`ruleexec.Rule` 结构体一致（探索态）：
 
 ```json
 {
   "rule_id": "org-a-db-readonly-2026",
   "version": "1.0.0",
   "scheme": "std/database-v1",
-  "grant": {
-    "capability": "query:SELECT",
-    "params": {
-      "tables": ["customers"],
-      "columns": { "customers": ["id", "name"] },
-      "row_filter": {
-        "customers": { "and": [ { "column": "tenant_id", "op": "=", "value": "org-a" } ] }
-      },
-      "limit": { "max": 100 }
-    }
+  "capability": "query:SELECT",
+  "params": {
+    "tables": ["customers"],
+    "columns": { "customers": ["id", "name"] },
+    "filter_columns": { "customers": ["tenant_id"] },
+    "row_filter": {
+      "customers": { "and": [ { "column": "tenant_id", "op": "=", "value": "org-a" } ] }
+    },
+    "limit": { "max": 100 }
   },
   "conditions": {
     "op": "and",
     "items": [
       { "op": "eq",      "path": "request.tenant_id", "value": "org-a" },
-      { "op": "time-in", "path": "request.time",      "window": ["08:00", "22:00"] }
+      { "op": "between", "path": "request.params.amount", "window": ["0", "1000"] }
     ]
   },
-  "roles": ["readonly"],
   "constraints": [
     { "scheme": "varwof/constraint-v1", "id": "allowed-cidr", "params": ["10.0.0.0/8"] }
-  ]
+  ],
+  "flow": {
+    "steps": [
+      { "name": "query", "kind": "op", "op": "db:select" },
+      { "kind": "if", "condition": { "op": "gt", "path": "rowCount", "value": 0 },
+        "then": [ { "name": "mark", "kind": "op", "op": "db:update" } ] }
+    ]
+  }
 }
 ```
+
+> 规则中**没有** `roles` 字段（角色属于凭证/主体层，2026-09-10 已从规则结构移除）。
 
 ### 信任分层（谁签什么）
 
@@ -317,19 +336,26 @@ DoS 防御要点（预算存在的根本理由）：
 
 已具备（现有代码）：
 
-- register：capability.json + 命名/版本 + PKCS#7 签名/验签（sign.go/verify）、
-  gen-authz / gen-docs / gen-capability、loader（嵌入+磁盘+热重载）；
+- register（判定层，CLC-v1）：capability.json + 命名/版本 + PKCS#7 签名/验签
+  （sign.go / cmd/verify）、gen-authz / gen-docs / gen-capability、
+  `semantics/`（Entails / Intersect / Authorize / 规范码）；capability 数据已拆到
+  独立的 capability 模块，loader 走磁盘目录（`LoadEmbedded` 已移除）；
+- register（执行层，ruleexec）：规则模型 + 条件求值器 + `op | if | seq` 流程引擎
+  + 预算沙箱 + 静态预检 + SQL 生成（全量参数化）+ 发布/验签 + 网关 phase-two
+  适配器；Go 与 TS 镜像共享同一组测试向量；
+- 发布边界：`RuleWithinSignerGrant` —— 规则声明的能力必须被签名者自己的 AIC
+  grant 覆盖（CLC 蕴含 + 约束包含），加载期 fail-closed；
 - 网关运行时接线：core capregistry（签发侧校验）、gateway phase-one
   fail-closed（EffectiveCaps 未注册即拒）；
 - aic-jwt：Go/TS 双层签名验证、P∩C、约束求值、能力匹配。
 
 待建（按优先级）：
 
-1. 规则文件格式定稿（rule.json 的 JSON Schema）；
-2. 迷你语言运行时：条件求值器（Go Starlark / 浏览器 AST）+ 预算默认值规范；
-3. Mini Workflow 流程引擎（线性脚本 → 状态机演进）；
-4. 网关 rule loader：验签 + 热加载（复用现有 capreg 模式）；
-5. 预算超限的事务性回滚语义。
+1. 规则文件格式从探索态升格（`demo/rule-exec/rule.schema.json` → 随注册表发布的
+   正式 schema，并纳入版本治理）；
+2. 流程状态机演进（`op | if | seq` 之上的持久化/恢复；并行与补偿仍为 v2 候选）；
+3. 预算超限的事务性回滚语义（当前语义是"超限即终止"）；
+4. 执行侧更多共享向量（现有条件 20 条 + SQL parity 4 条）。
 
 ### 开放问题（延续 §7）
 
@@ -340,10 +366,11 @@ DoS 防御要点（预算存在的根本理由）：
 ## 9.5 权威注册条目
 
 `std/database-v1` 已固化为正式注册条目
-（`register/data/std/database-v1/v1.json`）：7 个能力（query:SELECT/INSERT/
-UPDATE/DELETE/EXECUTE、admin:DDL/TRUNCATE）+ 完整 params_schema（tables/
-columns/filter_columns/row_filter/limit/aggregate + Filter 文法）+ 示例角色，
-嵌入 loader 加载（`LoadEmbedded`）并参与 `ValidateCapability` 校验。
+（`capability/data/std/database-v1/v1.json`，capability 模块）：7 个能力
+（query:SELECT/INSERT/UPDATE/DELETE/EXECUTE、admin:DDL/TRUNCATE）+
+完整 params_schema（tables/columns/filter_columns/row_filter/limit/aggregate +
+Filter 文法）+ 示例角色，由磁盘目录 loader 加载（`LoadFromDir` /
+`LoadFromBoth`）并参与 `ValidateCapability` 校验。
 
 ## 9.6 全球注册中心部署方案
 
@@ -357,18 +384,19 @@ Cloudflare Pages 静态分发 + PKCS#7 验签消费，实现全球开放能力�
 - ① **规则文件格式**：`rule.schema.json`（draft-07）+ `ValidateStructure`
   （条件 op / 流程 step kind / semver 结构校验）；
 - ② **预算默认值随规范发布**：`budget-defaults.json`
-  （steps 10k / iterations 1k / depth 64 / nesting 64 / wall_clock 100ms），
-  `LoadBudgetDefaults` / `BudgetFromDefaults` 加载，实现不得放宽；
-- ③ **迷你语言求值器（Go + TS 镜像）**：条件 AST 与流程引擎，
-  预算沙箱 + 静态预检（循环禁止嵌套、超界拒绝），Go 与浏览器端
-  语义一致、共享同一组测试场景；
+  （steps 10k / depth 64 / nesting 64；无迭代计数与墙钟默认值），
+  `LoadBudgetDefaults` / `BudgetFromDefaults` 加载，且**不得放宽**（超过已发布上限即拒绝）；
+- ③ **迷你语言求值器（Go + TS 镜像）**：条件 AST 与流程引擎（`op | if | seq`），
+  预算沙箱 + 静态预检（**嵌套深度**超界拒绝），Go 与浏览器端语义一致、
+  共享同一组测试向量（`ruleexec/testdata/condition-vectors.json` → Go + TS）；
 - ④ **网关 phase-two 契约**：`PhaseTwo` 接口 + `RuleExecutor`
   （结构校验 → 静态预检 → 条件求值 → 流程执行），接在
   gateway-core `EffectiveCaps` 之后；
 - **端到端闭环**：规则 → PKCS#7 签署 → 验签 → 执行 → 审计，
   `go run ./demo/rule-exec` 可完整复现；
 - **MySQL 新版测试**：`sqlgen.go`（database-v1 契约 → MySQL SQL 翻译器，
-  结构化谓词、防注入）+ 多用户权限矩阵测试（`mysql_test.go`）+
+  结构化谓词、**全量参数化**：值只走 `?` 占位符，`= NULL` 直接拒绝，
+  字符串比较用 `BINARY`）+ 多用户权限矩阵测试（`mysql_test.go`）+
   `scripts/test/aic/aic-db-mysql-v2.sh` 编排脚本（含可选 MYSQL_DSN
   真实库断言 `TestMySQLLive`）；
 - **HTTP 请求事实映射**：`request.go` 把 gateway-core `PluginContext`
@@ -423,3 +451,17 @@ Cloudflare Pages 静态分发 + PKCS#7 验签消费，实现全球开放能力�
 - register 目前为探索前原始状态（本文档不伴随任何代码改动）。
 - 与 AIC-JWT 草案的关系：本方案的 capability 参数契约对应草案 §6 能力容器
   的 `params`；约束类型对应 §7；命名空间注册对应 §15 的外部能力方案注册表。
+
+## 附注：时间窗属于授权约束，不属于执行条件
+
+> 2026-09-10 起，执行侧条件语言**不再包含 `time-in` 与 `contains`**：
+> 时间窗（含时区/跨午夜/星期）由**授权约束**（CLC §8 / `varwof/constraint-v1` 的 time-window）表达，
+> 执行条件的职责只限于**运行上下文**（变量、请求字段、角色等）。
+> 规则结构中的 `roles` 字段与数据库专属的 `validateSelectParams` 也已移除：
+> 角色属于凭证/主体层，参数语义统一由 CLC 的 `semantics.ValidateGrantParams` 校验。
+>
+> 同日起执行侧**移除了循环**（`while` / `for` / `break` / `continue`），随后又**移除了重试**
+> （`retry` / `max_retries`）与**迭代预算**（`max_iterations`）：
+> 保留的构造为 `op | if | seq`，预算项为**步数 / 深度 / 嵌套**。
+> 依据：重试是唯一剩下的放大倍数（`MaxRetries` ≤ 1000 ⇒ 一次授权最多触发上千次执行），
+> 且与幂等强耦合；重试应放在调用方/作业编排层，每次尝试重新过一遍授权判定。

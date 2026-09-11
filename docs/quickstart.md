@@ -13,7 +13,8 @@ import (
 )
 
 func main() {
-    reg, _ := register.NewRegistryWithEmbedded()
+    // 能力数据在独立的 capability 模块里（嵌入式加载已移除）
+    reg, _ := register.NewRegistryFromDisk("../capability/data")
 
     // 列出所有产品
     fmt.Print(reg.Summary())
@@ -74,23 +75,23 @@ if len(denied) > 0 {
 ```bash
 # 产品方签署 capability.json
 openssl pkcs7 -sign \
-  -in varwof/core/v1.json \
-  -out varwof/core/v1.json.p7s \
+  -in ../capability/data/varwof/core/v1.json \
+  -out ../capability/data/varwof/core/v1.json.p7s \
   -signer product.pem \
   -certfile chain.pem \
   -nodetach
 
 # 验证签名
 openssl smime -verify \
-  -in varwof/core/v1.json.p7s \
-  -content varwof/core/v1.json \
+  -in ../capability/data/varwof/core/v1.json.p7s \
+  -content ../capability/data/varwof/core/v1.json \
   -CAfile pki/root-ca.pem
 ```
 
 ```go
 // Go 验证
 trustRoots, _ := register.LoadTrustRoots("pki/")
-err := register.VerifyCapabilityPKCS7("varwof/core/v1.json", trustRoots)
+err := register.VerifyCapabilityPKCS7("../capability/data/varwof/core/v1.json", trustRoots)
 if err != nil {
     fmt.Println("签名验证失败:", err)
 }
