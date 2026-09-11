@@ -1,5 +1,8 @@
 # varwof-register
 
+> ⭐ Like this repo? Give a star to the flagship one:
+> [![GitHub stars](https://img.shields.io/github/stars/varwof/core?style=social&label=varwof/core)](https://github.com/varwof/core)
+
 > Capability Registry — standard capability definition, validation, and authz.json generation for fine-grained AI Agent permission control.
 
 > ⚠️ **Preview** — Not for production use. APIs and features may change before official release.
