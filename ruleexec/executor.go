@@ -22,10 +22,9 @@ type DecisionInput struct {
 
 // Decision is the phase-two outcome.
 type Decision struct {
-	Allow      bool
-	Reason     string
-	Steps      int64
-	Iterations int64
+	Allow  bool
+	Reason string
+	Steps  int64
 }
 
 // PhaseTwo is the policy-executor contract the gateway phase-two
@@ -74,6 +73,6 @@ func (e *RuleExecutor) Decide(in DecisionInput) (*Decision, error) {
 			return nil, fmt.Errorf("phase2: flow: %w", err)
 		}
 	}
-	steps, iters := e.Budget.Stats()
-	return &Decision{Allow: true, Steps: steps, Iterations: iters}, nil
+	steps := e.Budget.Stats()
+	return &Decision{Allow: true, Steps: steps}, nil
 }

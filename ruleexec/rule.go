@@ -4,11 +4,13 @@
 package ruleexec
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
 
 	"github.com/varwof/register"
+	"github.com/varwof/register/semantics"
 )
 
 // Rule is the signed rule file format (draft, see
@@ -20,7 +22,6 @@ type Rule struct {
 	Capability  string          `json:"capability"`
 	Params      json.RawMessage `json:"params"`
 	Conditions  *Condition      `json:"conditions,omitempty"`
-	Roles       []string        `json:"roles,omitempty"`
 	Constraints []Constraint    `json:"constraints,omitempty"`
 	Flow        *Flow           `json:"flow,omitempty"`
 }
@@ -42,9 +43,17 @@ func LoadRule(path string) (*Rule, error) {
 }
 
 // LoadRuleBytes parses a rule from JSON bytes.
+//
+// Unknown fields are rejected (fail-closed): a misspelled key such as
+// "condtions" would otherwise be dropped silently and the rule would load — and
+// execute — without the constraint the author meant to write.  Rules are
+// machine-generated as often as hand-written, so the loader must not be lenient
+// about field names.
 func LoadRuleBytes(data []byte) (*Rule, error) {
 	var r Rule
-	if err := json.Unmarshal(data, &r); err != nil {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&r); err != nil {
 		return nil, fmt.Errorf("parse rule: %w", err)
 	}
 	if r.RuleID == "" || r.Version == "" || r.Scheme == "" || r.Capability == "" {
@@ -56,8 +65,9 @@ func LoadRuleBytes(data []byte) (*Rule, error) {
 	return &r, nil
 }
 
-// Validate checks the rule against a scheme registry and the
-// database-v1 params contract.
+// Validate checks the rule against the scheme registry and validates the
+// rule parameters with the capability semantics (CLC-v1), not with
+// ruleexec-local rules -- see docs/capability-language-layers.md.
 func (r *Rule) Validate(reg *register.Registry) error {
 	if _, _, err := reg.ValidateCapability(r.Scheme + ":" + r.Capability); err != nil {
 		return fmt.Errorf("capability %s:%s: %w", r.Scheme, r.Capability, err)
@@ -67,96 +77,26 @@ func (r *Rule) Validate(reg *register.Registry) error {
 			return fmt.Errorf("constraint scheme %q not allowed", c.Scheme)
 		}
 	}
-	if r.Scheme == "std/database-v1" && r.Capability == "query:SELECT" {
-		if err := validateSelectParams(r.Params); err != nil {
+	var params map[string]any
+	if len(r.Params) > 0 {
+		if err := json.Unmarshal(r.Params, &params); err != nil {
+			return fmt.Errorf("params: must be a JSON object: %w", err)
+		}
+		if err := semantics.ValidateGrantParams(params); err != nil {
 			return fmt.Errorf("params: %w", err)
 		}
 	}
-	return nil
-}
-
-// validateSelectParams implements the database-v1 SELECT contract:
-// tables / columns / row_filter / limit.
-func validateSelectParams(raw json.RawMessage) error {
-	var p struct {
-		Tables        []string            `json:"tables"`
-		Columns       map[string]any      `json:"columns"`
-		FilterColumns map[string][]string `json:"filter_columns,omitempty"`
-		RowFilter     map[string]any      `json:"row_filter"`
-		Limit         *struct {
-			Max int `json:"max"`
-		} `json:"limit"`
-		Aggregate *bool `json:"aggregate"`
+	// The capability's parameter contract, from the registry: a declared
+	// params_schema is enforced data-driven (including its `required` list),
+	// falling back to the flat contract.  Without this the rule path was
+	// laxer than the claims path — a rule could omit a required parameter
+	// (e.g. `columns` for std/database-v1:query:SELECT) and still be signed.
+	if err := reg.ValidateParams(r.Scheme, r.Capability, params); err != nil {
+		return fmt.Errorf("params: %w", err)
 	}
-	if err := json.Unmarshal(raw, &p); err != nil {
-		return fmt.Errorf("malformed params: %w", err)
-	}
-	if len(p.Tables) == 0 || len(p.Tables) > 32 {
-		return fmt.Errorf("tables must contain 1..32 entries")
-	}
-	allowed := make(map[string]map[string]bool, len(p.Tables))
-	for _, t := range p.Tables {
-		allowed[t] = map[string]bool{}
-	}
-	for tbl, v := range p.Columns {
-		if _, ok := allowed[tbl]; !ok {
-			return fmt.Errorf("columns references unlisted table %q", tbl)
-		}
-		switch cv := v.(type) {
-		case string:
-			if cv != "*" {
-				return fmt.Errorf("columns[%q] must be an array or \"*\"", tbl)
-			}
-			allowed[tbl] = nil // nil == star
-		case []any:
-			if len(cv) == 0 {
-				return fmt.Errorf("columns[%q] must not be empty", tbl)
-			}
-			for _, c := range cv {
-				cs, ok := c.(string)
-				if !ok {
-					return fmt.Errorf("columns[%q] must be strings", tbl)
-				}
-				allowed[tbl][cs] = true
-			}
-		default:
-			return fmt.Errorf("columns[%q] must be an array or \"*\"", tbl)
-		}
-	}
-	// filter-only columns: usable in WHERE but never returned.
-	filterAllowed := make(map[string]map[string]bool, len(p.Tables))
-	for _, t := range p.Tables {
-		filterAllowed[t] = map[string]bool{}
-	}
-	for tbl, cols := range p.FilterColumns {
-		if _, ok := allowed[tbl]; !ok {
-			return fmt.Errorf("filter_columns references unlisted table %q", tbl)
-		}
-		if len(cols) == 0 {
-			return fmt.Errorf("filter_columns[%q] must not be empty", tbl)
-		}
-		for _, c := range cols {
-			filterAllowed[tbl][c] = true
-		}
-	}
-	if p.RowFilter != nil {
-		for tbl, filt := range p.RowFilter {
-			if _, ok := allowed[tbl]; !ok {
-				return fmt.Errorf("row_filter references unlisted table %q", tbl)
-			}
-			// a filter column must be either an allowed (returnable)
-			// column or a declared filter-only column
-			permit := filterAllowed[tbl]
-			if allowed[tbl] == nil { // "*" allows everything
-				permit = nil
-			}
-			if err := checkFilterColumns(filt, permit, tbl); err != nil {
-				return err
-			}
-		}
-	}
-	if p.Limit != nil && (p.Limit.Max < 1 || p.Limit.Max > 100000) {
-		return fmt.Errorf("limit.max must be in 1..100000")
+	// Scheme-specific structural contract (owned by the scheme, not by ruleexec).
+	if err := register.ValidateSchemeParams(r.Scheme, r.Capability, r.Params); err != nil {
+		return fmt.Errorf("params: %w", err)
 	}
 	return nil
 }

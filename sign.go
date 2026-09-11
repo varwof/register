@@ -79,26 +79,36 @@ func SignCapability(certPath, keyPath, capPath, outputPath string) error {
 // VerifyCapabilityPKCS7 verifies a capability JSON against its .p7s signature.
 // trustRoots: PEM root/intermediate certificates for chain verification.
 func VerifyCapabilityPKCS7(capPath string, trustRoots []*x509.Certificate) error {
+	_, err := VerifyCapabilityPKCS7Cert(capPath, trustRoots)
+	return err
+}
+
+// VerifyCapabilityPKCS7Cert verifies a capability JSON against its .p7s
+// signature and returns the SIGNER certificate.  Callers that must bind the
+// published content to the signer's own authority (e.g. ruleexec, which
+// requires the rule capability to be covered by the signer's AIC grant) use
+// this variant; plain verification can use VerifyCapabilityPKCS7.
+func VerifyCapabilityPKCS7Cert(capPath string, trustRoots []*x509.Certificate) (*x509.Certificate, error) {
 	sigPath := capPath + ".p7s"
 	capData, err := os.ReadFile(capPath)
 	if err != nil {
-		return fmt.Errorf("read capability: %w", err)
+		return nil, fmt.Errorf("read capability: %w", err)
 	}
 	sigPEM, err := os.ReadFile(sigPath)
 	if err != nil {
-		return fmt.Errorf("read signature: %w", err)
+		return nil, fmt.Errorf("read signature: %w", err)
 	}
 
 	// decode PEM
 	block, _ := pem.Decode(sigPEM)
 	if block == nil {
-		return fmt.Errorf("invalid PEM in %s", sigPath)
+		return nil, fmt.Errorf("invalid PEM in %s", sigPath)
 	}
 
 	// verify detached signature
 	signerCert, err := pkcs7.VerifyDetached(block.Bytes, capData)
 	if err != nil {
-		return fmt.Errorf("PKCS#7 verify: %w", err)
+		return nil, fmt.Errorf("PKCS#7 verify: %w", err)
 	}
 
 	// verify certificate chain
@@ -112,11 +122,11 @@ func VerifyCapabilityPKCS7(capPath string, trustRoots []*x509.Certificate) error
 			KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageCodeSigning},
 		}
 		if _, err := signerCert.Verify(opts); err != nil {
-			return fmt.Errorf("certificate chain verify: %w", err)
+			return nil, fmt.Errorf("certificate chain verify: %w", err)
 		}
 	}
 
-	return nil
+	return signerCert, nil
 }
 
 // HasSignature checks if a .p7s file exists for the given capability file.

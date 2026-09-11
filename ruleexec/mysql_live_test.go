@@ -38,11 +38,11 @@ func TestMySQLLive(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sqlStr, err := GenerateSelectSQL(rule.Params)
+	sqlStr, args, err := GenerateSelectSQL(rule.Params)
 	if err != nil {
 		t.Fatal(err)
 	}
-	rows, err := db.Query(sqlStr)
+	rows, err := db.Query(sqlStr, args...)
 	if err != nil {
 		t.Fatalf("query %q: %v", sqlStr, err)
 	}
@@ -63,11 +63,11 @@ func TestMySQLLive(t *testing.T) {
 	}
 
 	// 2) org-b rule (li): extra email column, different tenant
-	liSQL := sqlForParams(t, `{"tables":["customers"],"columns":{"customers":["id","name","email"]},
+	liSQL, liArgs := sqlForParams(t, `{"tables":["customers"],"columns":{"customers":["id","name","email"]},
 		"filter_columns":{"customers":["tenant_id"]},
 		"row_filter":{"customers":{"column":"tenant_id","op":"=","value":"org-b"}},
 		"limit":{"max":50}}`)
-	rows2, err := db.Query(liSQL)
+	rows2, err := db.Query(liSQL, liArgs...)
 	if err != nil {
 		t.Fatalf("query %q: %v", liSQL, err)
 	}

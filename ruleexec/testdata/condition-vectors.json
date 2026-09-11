@@ -1,0 +1,25 @@
+{
+  "note": "共享条件真值表（Go 与 TS 两份实现都必须逐条一致）。null 规则：比较类算子遇 null 恒 false；只有 is-null 能测 null/缺失；不做跨类型转换；字符串字节精确。",
+  "cases": [
+    { "id": "eq-basic-true",  "ctx": {"request": {"tenant_id": "org-a"}}, "condition": {"op": "eq", "path": "request.tenant_id", "value": "org-a"}, "expect": {"result": true},  "derivation": "字面相等" },
+    { "id": "eq-basic-false", "ctx": {"request": {"tenant_id": "org-a"}}, "condition": {"op": "eq", "path": "request.tenant_id", "value": "org-b"}, "expect": {"result": false}, "derivation": "字面不等" },
+    { "id": "eq-case-sensitive", "ctx": {"request": {"s": "Admin"}}, "condition": {"op": "eq", "path": "request.s", "value": "admin"}, "expect": {"result": false}, "derivation": "字符串字节精确（区分大小写）" },
+    { "id": "eq-no-coercion", "ctx": {"request": {"n": 500}}, "condition": {"op": "eq", "path": "request.n", "value": "500"}, "expect": {"result": false}, "derivation": "不做跨类型转换" },
+    { "id": "eq-null-vs-value", "ctx": {"request": {"note": null}}, "condition": {"op": "eq", "path": "request.note", "value": "x"}, "expect": {"result": false}, "derivation": "NULL 不等于任何值" },
+    { "id": "eq-null-vs-null", "ctx": {"request": {"note": null}}, "condition": {"op": "eq", "path": "request.note", "value": null}, "expect": {"result": false}, "derivation": "NULL = NULL 亦为 false（与 SQL 一致）" },
+    { "id": "neq-null", "ctx": {"request": {"note": null}}, "condition": {"op": "neq", "path": "request.note", "value": "x"}, "expect": {"result": false}, "derivation": "NULL <> x 亦为 false" },
+    { "id": "eq-missing-is-error", "ctx": {"request": {}}, "condition": {"op": "eq", "path": "request.absent", "value": "x"}, "expect": {"error": true}, "derivation": "路径缺失是错误（fail-closed），不是 false" },
+    { "id": "is-null-explicit", "ctx": {"request": {"note": null}}, "condition": {"op": "is-null", "path": "request.note"}, "expect": {"result": true}, "derivation": "显式 null" },
+    { "id": "is-null-missing", "ctx": {"request": {}}, "condition": {"op": "is-null", "path": "request.absent"}, "expect": {"result": true}, "derivation": "缺失 = 无值（is-null 是唯一入口）" },
+    { "id": "is-null-false", "ctx": {"request": {"note": "x"}}, "condition": {"op": "is-null", "path": "request.note"}, "expect": {"result": false}, "derivation": "有值" },
+    { "id": "lt-null", "ctx": {"request": {"amount": null}}, "condition": {"op": "lt", "path": "request.amount", "value": 1000}, "expect": {"result": false}, "derivation": "NULL 比较恒 false" },
+    { "id": "lt-number", "ctx": {"request": {"amount": 500}}, "condition": {"op": "lt", "path": "request.amount", "value": 1000}, "expect": {"result": true}, "derivation": "数值比较" },
+    { "id": "lt-wrong-type-is-error", "ctx": {"request": {"amount": "500"}}, "condition": {"op": "lt", "path": "request.amount", "value": 1000}, "expect": {"error": true}, "derivation": "类型不匹配是错误，不是 false" },
+    { "id": "in-true", "ctx": {"request": {"tenant_id": "org-a"}}, "condition": {"op": "in", "path": "request.tenant_id", "value": ["org-a", "org-b"]}, "expect": {"result": true}, "derivation": "成员命中" },
+    { "id": "in-null-value", "ctx": {"request": {"tenant_id": null}}, "condition": {"op": "in", "path": "request.tenant_id", "value": ["org-a"]}, "expect": {"result": false}, "derivation": "NULL 不在任何集合中" },
+    { "id": "between-number", "ctx": {"request": {"amount": 500}}, "condition": {"op": "between", "path": "request.amount", "window": ["1", "1000"]}, "expect": {"result": true}, "derivation": "闭区间" },
+    { "id": "between-null", "ctx": {"request": {"amount": null}}, "condition": {"op": "between", "path": "request.amount", "window": ["1", "1000"]}, "expect": {"result": false}, "derivation": "NULL 比较恒 false" },
+    { "id": "and-short", "ctx": {"request": {"a": 1, "b": 2}}, "condition": {"op": "and", "items": [{"op": "eq", "path": "request.a", "value": 1}, {"op": "eq", "path": "request.b", "value": 3}]}, "expect": {"result": false}, "derivation": "and 短路：一项 false 即 false" },
+    { "id": "not-null-check", "ctx": {"request": {"q": "x"}}, "condition": {"op": "not", "items": [{"op": "is-null", "path": "request.q"}]}, "expect": {"result": true}, "derivation": "有值 = not is-null（存在性检查的标准写法）" }
+  ]
+}

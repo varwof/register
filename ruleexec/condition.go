@@ -9,7 +9,6 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
-	"time"
 )
 
 // Condition is the structured condition AST (the "mini language").
@@ -19,7 +18,7 @@ type Condition struct {
 	Op     string      `json:"op"`
 	Path   string      `json:"path,omitempty"`
 	Value  any         `json:"value,omitempty"`
-	Window []string    `json:"window,omitempty"` // time-in / between
+	Window []string    `json:"window,omitempty"` // between
 	Items  []Condition `json:"items,omitempty"`  // and / or / not
 }
 
@@ -42,22 +41,30 @@ func resolvePath(ctx map[string]any, path string) (any, bool) {
 	return cur, true
 }
 
-func toFloat(v any) (float64, bool) {
+// toNumber accepts NUMERIC values only (no string parsing): comparisons must
+// not rely on implicit type coercion.
+func toNumber(v any) (float64, bool) {
 	switch t := v.(type) {
 	case json.Number:
 		f, err := t.Float64()
 		return f, err == nil
 	case float64:
 		return t, true
+	case float32:
+		return float64(t), true
 	case int:
 		return float64(t), true
 	case int64:
 		return float64(t), true
-	case string:
-		f, err := strconv.ParseFloat(t, 64)
-		return f, err == nil
 	}
 	return 0, false
+}
+
+// toBound parses a declared window bound ("1", "1000").  Window bounds are
+// strings by AST design; only here is a string parsed as a number.
+func toBound(s string) (float64, bool) {
+	f, err := strconv.ParseFloat(s, 64)
+	return f, err == nil
 }
 
 // EvalCondition evaluates a condition against a context map with a
@@ -101,9 +108,12 @@ func EvalCondition(c Condition, ctx map[string]any, b *Budget, depth int) (bool,
 		ok, err := EvalCondition(c.Items[0], ctx, b, depth+1)
 		return !ok, err
 	case "is-null":
+		// "no value present": either the path is absent from the context or
+		// its value is explicitly null.  This is the ONLY way to test for a
+		// missing/empty value: comparison operators never match NULL.
 		v, ok := resolvePath(ctx, c.Path)
 		if !ok {
-			return true, nil // missing path == null
+			return true, nil
 		}
 		return v == nil, nil
 	default:
@@ -121,12 +131,24 @@ func EvalCondition(c Condition, ctx map[string]any, b *Budget, depth int) (bool,
 func evalLeaf(op string, got, want any, window []string) (bool, error) {
 	switch op {
 	case "eq":
+		// NULL is never equal (SQL: `col = NULL` matches no rows); use
+		// is-null to test for a missing/empty value.
+		if got == nil || want == nil {
+			return false, nil
+		}
 		return reflect.DeepEqual(normalizeNum(got), normalizeNum(want)), nil
 	case "neq":
+		// NULL is never unequal either (SQL: `col <> NULL` matches no rows).
+		if got == nil || want == nil {
+			return false, nil
+		}
 		return !reflect.DeepEqual(normalizeNum(got), normalizeNum(want)), nil
 	case "lt", "lte", "gt", "gte":
-		gf, ok1 := toFloat(got)
-		wf, ok2 := toFloat(want)
+		if got == nil || want == nil {
+			return false, nil // comparison with NULL is never true
+		}
+		gf, ok1 := toNumber(got)
+		wf, ok2 := toNumber(want)
 		if !ok1 || !ok2 {
 			return false, fmt.Errorf("op %s requires numeric operands", op)
 		}
@@ -145,75 +167,44 @@ func evalLeaf(op string, got, want any, window []string) (bool, error) {
 		if !ok {
 			return false, fmt.Errorf("op in requires a list value")
 		}
+		if got == nil {
+			return false, nil // NULL is in no list (SQL: `NULL IN (...)` is unknown)
+		}
 		for _, item := range list {
+			if item == nil {
+				continue // null list elements never match (also rejected at load time)
+			}
 			if reflect.DeepEqual(normalizeNum(got), normalizeNum(item)) {
 				return true, nil
 			}
 		}
 		return false, nil
-	case "contains":
-		gs, ok1 := got.(string)
-		ws, ok2 := want.(string)
-		if !ok1 || !ok2 {
-			return false, fmt.Errorf("op contains requires string operands")
-		}
-		return strings.Contains(gs, ws), nil
 	case "between":
 		if len(window) != 2 {
 			return false, fmt.Errorf("op between requires window [lo, hi]")
 		}
-		gf, ok1 := toFloat(got)
-		lo, ok2 := toFloat(window[0])
-		hi, ok3 := toFloat(window[1])
+		if got == nil {
+			return false, nil // comparison with NULL is never true
+		}
+		gf, ok1 := toNumber(got)
+		lo, ok2 := toBound(window[0])
+		hi, ok3 := toBound(window[1])
 		if !ok1 || !ok2 || !ok3 {
 			return false, fmt.Errorf("op between requires numeric operands")
 		}
 		return gf >= lo && gf <= hi, nil
-	case "time-in":
-		if len(window) != 2 {
-			return false, fmt.Errorf("op time-in requires window [start, end] HH:MM")
-		}
-		ts, ok := got.(string)
-		if !ok {
-			return false, fmt.Errorf("op time-in requires an RFC3339 time string")
-		}
-		t, err := time.Parse(time.RFC3339, ts)
-		if err != nil {
-			return false, fmt.Errorf("op time-in: %w", err)
-		}
-		cur := t.UTC().Hour()*60 + t.UTC().Minute()
-		start, err1 := parseHHMM(window[0])
-		end, err2 := parseHHMM(window[1])
-		if err1 != nil || err2 != nil {
-			return false, fmt.Errorf("op time-in: invalid window")
-		}
-		if start <= end {
-			return cur >= start && cur <= end, nil
-		}
-		// overnight window
-		return cur >= start || cur <= end, nil
 	case "is-null":
 		return got == nil, nil
 	}
 	return false, fmt.Errorf("unknown condition op %q", op)
 }
 
+// normalizeNum normalizes NUMERIC values (int/float/json.Number) so that
+// 500 and 500.0 compare equal.  It deliberately does NOT convert strings:
+// "500" and 500 are different values (no implicit type coercion).
 func normalizeNum(v any) any {
-	if n, ok := toFloat(v); ok {
+	if n, ok := toNumber(v); ok {
 		return n
 	}
 	return v
-}
-
-func parseHHMM(s string) (int, error) {
-	parts := strings.Split(s, ":")
-	if len(parts) != 2 {
-		return 0, fmt.Errorf("bad HH:MM %q", s)
-	}
-	h, err1 := strconv.Atoi(parts[0])
-	m, err2 := strconv.Atoi(parts[1])
-	if err1 != nil || err2 != nil || h < 0 || h > 23 || m < 0 || m > 59 {
-		return 0, fmt.Errorf("bad HH:MM %q", s)
-	}
-	return h*60 + m, nil
 }

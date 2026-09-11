@@ -19,7 +19,20 @@ import (
 // A fresh execution budget is created per plugin so that counters are
 // never shared across executions.
 func LoadRulePlugin(rulePath string, trustRoots []*x509.Certificate, handler OpHandler) (*RulePlugin, error) {
-	if err := register.VerifyCapabilityPKCS7(rulePath, trustRoots); err != nil {
+	rule, err := loadAuthorizedRule(rulePath, trustRoots)
+	if err != nil {
+		return nil, err
+	}
+	return NewRulePlugin(rule.Scheme, rule, NewBudget(), handler), nil
+}
+
+// loadAuthorizedRule verifies the detached PKCS#7 signature, parses the rule,
+// validates its structure, and enforces the publication boundary: the rule's
+// capability must be covered by the SIGNER's own AIC grant.  Any failure is
+// fatal for the rule (fail-closed).
+func loadAuthorizedRule(rulePath string, trustRoots []*x509.Certificate) (*Rule, error) {
+	signer, err := register.VerifyCapabilityPKCS7Cert(rulePath, trustRoots)
+	if err != nil {
 		return nil, fmt.Errorf("rule %s: signature verification failed: %w", rulePath, err)
 	}
 	rule, err := LoadRule(rulePath)
@@ -29,7 +42,10 @@ func LoadRulePlugin(rulePath string, trustRoots []*x509.Certificate, handler OpH
 	if err := ValidateStructure(rule); err != nil {
 		return nil, fmt.Errorf("rule %s: %w", rulePath, err)
 	}
-	return NewRulePlugin(rule.Scheme, rule, NewBudget(), handler), nil
+	if err := RuleWithinSignerGrant(rule, signer); err != nil {
+		return nil, fmt.Errorf("rule %s: %w", rulePath, err)
+	}
+	return rule, nil
 }
 
 // RegisterRulePluginsFromDir loads signed rules from a published rule

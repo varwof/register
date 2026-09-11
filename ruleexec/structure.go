@@ -13,13 +13,12 @@ import (
 var knownConditionOps = map[string]bool{
 	"and": true, "or": true, "not": true,
 	"eq": true, "neq": true, "lt": true, "lte": true, "gt": true, "gte": true,
-	"in": true, "contains": true, "between": true, "time-in": true, "is-null": true,
+	"in": true, "between": true, "is-null": true,
 }
 
 // knownStepKinds is the fixed flow step set.
 var knownStepKinds = map[string]bool{
-	"op": true, "if": true, "while": true, "for": true,
-	"retry": true, "seq": true, "break": true, "continue": true,
+	"op": true, "if": true, "seq": true,
 }
 
 var versionRe = regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+$`)
@@ -51,6 +50,23 @@ func ValidateStructure(r *Rule) error {
 
 func checkCondition(c *Condition) error {
 	if c == nil {
+		return nil
+	}
+	switch c.Op {
+	case "eq", "neq", "lt", "lte", "gt", "gte":
+		if c.Value == nil && c.Path != "" {
+			return fmt.Errorf("condition %s: comparing to null is not supported; use \"is-null\" (or \"not\" + \"is-null\")", c.Op)
+		}
+	case "in":
+		if list, ok := c.Value.([]any); ok {
+			for _, it := range list {
+				if it == nil {
+					return fmt.Errorf("condition in: null elements are not allowed; use \"is-null\" per value")
+				}
+			}
+		}
+	}
+	if c == nil {
 		return fmt.Errorf("nil condition")
 	}
 	if !knownConditionOps[c.Op] {
@@ -73,9 +89,6 @@ func checkSteps(steps []Step) error {
 		if st.Kind == "if" && st.Condition == nil {
 			return fmt.Errorf("if step %q requires a condition", st.Name)
 		}
-		if (st.Kind == "while") && st.Condition == nil {
-			return fmt.Errorf("while step %q requires a condition", st.Name)
-		}
 		if st.Condition != nil {
 			if err := checkCondition(st.Condition); err != nil {
 				return err
@@ -85,9 +98,6 @@ func checkSteps(steps []Step) error {
 			return err
 		}
 		if err := checkSteps(st.Else); err != nil {
-			return err
-		}
-		if err := checkSteps(st.Do); err != nil {
 			return err
 		}
 		if err := checkSteps(st.Steps); err != nil {

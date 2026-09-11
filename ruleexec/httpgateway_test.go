@@ -70,8 +70,10 @@ func newTestGateway(t *testing.T, exec SQLExecutor) (*HTTPGateway, map[string]*R
 // and SQL-generation semantics.
 func TestHTTPGatewayChain(t *testing.T) {
 	var lastSQL string
-	fake := func(q string) ([]map[string]any, error) {
+	var lastArgs []any
+	fake := func(q string, args ...any) ([]map[string]any, error) {
 		lastSQL = q
+		lastArgs = args
 		return []map[string]any{{"id": 1, "name": "alice"}}, nil
 	}
 	g, _ := newTestGateway(t, fake)
@@ -96,8 +98,12 @@ func TestHTTPGatewayChain(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("zhang: status %d", resp.StatusCode)
 	}
-	if !strings.Contains(lastSQL, "`tenant_id` = 'org-a'") || strings.Contains(lastSQL, "`email`") {
+	if !strings.Contains(lastSQL, "`tenant_id` = ?") || strings.Contains(lastSQL, "`email`") {
 		t.Fatalf("zhang SQL wrong: %s", lastSQL)
+	}
+	// The tenant value must travel as a bind parameter, never in the statement.
+	if strings.Contains(lastSQL, "org-a") || len(lastArgs) != 1 || lastArgs[0] != "org-a" {
+		t.Fatalf("zhang SQL/args wrong: sql=%s args=%v", lastSQL, lastArgs)
 	}
 	resp.Body.Close()
 
@@ -106,8 +112,11 @@ func TestHTTPGatewayChain(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("li: status %d", resp.StatusCode)
 	}
-	if !strings.Contains(lastSQL, "`email`") || !strings.Contains(lastSQL, "= 'org-b'") {
+	if !strings.Contains(lastSQL, "`email`") || !strings.Contains(lastSQL, "`tenant_id` = ?") {
 		t.Fatalf("li SQL wrong: %s", lastSQL)
+	}
+	if strings.Contains(lastSQL, "org-b") || len(lastArgs) != 1 || lastArgs[0] != "org-b" {
+		t.Fatalf("li SQL/args wrong: sql=%s args=%v", lastSQL, lastArgs)
 	}
 	resp.Body.Close()
 

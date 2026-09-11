@@ -5,6 +5,7 @@ package ruleexec
 
 import (
 	"fmt"
+	"path/filepath"
 
 	"github.com/varwof/register"
 )
@@ -28,11 +29,9 @@ const ruleJSON = `{
     "op": "and",
     "items": [
       { "op": "eq", "path": "request.tenant_id", "value": "org-a" },
-      { "op": "time-in", "path": "request.time", "window": ["08:00", "22:00"] },
       { "op": "lte", "path": "request.params.amount", "value": 1000 }
     ]
   },
-  "roles": ["readonly"],
   "constraints": [
     { "scheme": "varwof/constraint-v1", "id": "allowed-cidr", "params": ["10.0.0.0/8"] }
   ],
@@ -41,26 +40,23 @@ const ruleJSON = `{
       { "name": "query", "kind": "op", "op": "db:select" },
       { "kind": "if", "condition": { "op": "gt", "path": "rowCount", "value": 0 },
         "then": [ { "name": "mark", "kind": "op", "op": "db:update" } ] },
-      { "name": "notify", "kind": "retry", "max_retries": 2,
-        "steps": [ { "kind": "op", "op": "db:notify" } ] }
+      { "name": "notify", "kind": "op", "op": "db:notify" }
     ]
   }
 }`
 
 // demoRegistry provides the std/database-v1 scheme for rule validation.
+//
+// It loads the repository fixture rather than registering a stub with ids only:
+// a stub declares no parameter contract, so parameter validation against it
+// either rejects everything or (as it used to) silently accepts anything.
+// Rule.Validate now enforces the registry's parameter contract, which is the
+// same one the claims path uses.
 func demoRegistry() *register.Registry {
-	reg := register.NewRegistry()
-	reg.Register(&register.SchemeDefinition{
-		SchemeID: "std/database-v1",
-		Name:     "Standard Database Capabilities (v1)",
-		Version:  "1.0.0",
-		Vendor:   "std",
-		Product:  "database-v1",
-		Capabilities: []register.CapabilityEntry{
-			{ID: "query:SELECT", Description: "read rows"},
-			{ID: "query:UPDATE", Description: "update rows"},
-		},
-	})
+	reg, err := register.NewRegistryFromDisk(filepath.Join("..", "testdata", "capability"))
+	if err != nil {
+		panic("ruleexec test fixture: " + err.Error())
+	}
 	return reg
 }
 

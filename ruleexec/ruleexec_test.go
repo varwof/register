@@ -6,10 +6,8 @@ package ruleexec
 import (
 	"crypto/x509"
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/varwof/register"
@@ -43,74 +41,14 @@ func wantBudgetKind(t *testing.T, err error, kind BudgetKind) {
 
 // --- DoS: static pre-check -------------------------------------------
 
-func TestBudgetStaticForRejected(t *testing.T) {
-	flow := Flow{Steps: []Step{{Kind: "for", From: 0, To: 1_000_000_000, Do: []Step{{Kind: "op", Op: "noop"}}}}}
-	err := CheckStaticBounds(flow, NewBudget())
-	if err == nil || !strings.Contains(err.Error(), "static bound") {
-		t.Fatalf("expected static bound rejection, got %v", err)
-	}
-}
-
-func TestBudgetStaticRetryRejected(t *testing.T) {
-	flow := Flow{Steps: []Step{{Kind: "retry", MaxRetries: 5000, Steps: []Step{{Kind: "op", Op: "noop"}}}}}
-	err := CheckStaticBounds(flow, NewBudget())
-	if err == nil || !strings.Contains(err.Error(), "static bound") {
-		t.Fatalf("expected static bound rejection for retry, got %v", err)
-	}
-}
-
 // --- DoS: runtime budgets ---------------------------------------------
 
-func TestBudgetInfiniteWhileStopped(t *testing.T) {
-	flow := Flow{Steps: []Step{{
-		Kind:      "while",
-		Condition: &Condition{Op: "eq", Path: "flag", Value: true},
-		Do:        []Step{{Kind: "op", Op: "noop"}},
-	}}}
-	b := NewBudget()
-	err := RunFlow(flow, ctxWith(map[string]any{"flag": true}, nil), b)
-	wantBudgetKind(t, err, KindIterations)
-	if b.iterations != DefaultMaxIterations+1 {
-		t.Fatalf("expected %d iterations charged, got %d", DefaultMaxIterations+1, b.iterations)
-	}
-}
-
-func TestStaticNestedLoopRejected(t *testing.T) {
-	// loop-in-loop is forbidden by structure (even transitively).
-	inner := []Step{{Kind: "for", From: 0, To: 10, Do: []Step{{Kind: "op", Op: "noop"}}}}
-	flow := Flow{Steps: []Step{{Kind: "for", From: 0, To: 10, Do: inner}}}
-	if err := CheckStaticBounds(flow, NewBudget()); err == nil || !strings.Contains(err.Error(), "nested loop") {
-		t.Fatalf("nested loop must be rejected statically, got %v", err)
-	}
-	// while -> if -> while is also a nested loop (transitively).
-	flow2 := Flow{Steps: []Step{{
-		Kind: "while", Condition: &Condition{Op: "eq", Path: "flag", Value: true},
-		Do: []Step{{Kind: "if", Condition: &Condition{Op: "eq", Path: "flag", Value: true},
-			Then: []Step{{Kind: "while", Condition: &Condition{Op: "eq", Path: "flag", Value: true},
-				Do: []Step{{Kind: "op", Op: "noop"}}}}}},
-	}}}
-	if err := CheckStaticBounds(flow2, NewBudget()); err == nil || !strings.Contains(err.Error(), "nested loop") {
-		t.Fatalf("while->if->while must be rejected statically, got %v", err)
-	}
-}
-
 func TestAllowedNesting(t *testing.T) {
-	// while nesting if (allowed)
-	wif := Flow{Steps: []Step{{
-		Kind: "while", Condition: &Condition{Op: "eq", Path: "flag", Value: true},
-		Do: []Step{{Kind: "if", Condition: &Condition{Op: "eq", Path: "flag", Value: false},
-			Then: []Step{{Kind: "op", Op: "noop"}}}}},
-	}}
+	// if nesting seq (allowed)
+	wif := Flow{Steps: []Step{{Kind: "if", Condition: &Condition{Op: "eq", Path: "flag", Value: false},
+		Then: []Step{{Kind: "seq", Steps: []Step{{Kind: "op", Op: "noop"}}}}}}}
 	if err := CheckStaticBounds(wif, NewBudget()); err != nil {
-		t.Fatalf("while->if should be allowed: %v", err)
-	}
-	// if nesting while (allowed)
-	fw := Flow{Steps: []Step{{Kind: "if", Condition: &Condition{Op: "eq", Path: "flag", Value: false},
-		Then: []Step{{Kind: "while", Condition: &Condition{Op: "eq", Path: "flag", Value: true},
-			Do: []Step{{Kind: "op", Op: "noop"}}}}}},
-	}
-	if err := CheckStaticBounds(fw, NewBudget()); err != nil {
-		t.Fatalf("if->while should be allowed: %v", err)
+		t.Fatalf("if->seq should be allowed: %v", err)
 	}
 }
 
@@ -154,8 +92,6 @@ func TestConditionEval(t *testing.T) {
 			{Op: "eq", Path: "request.tenant_id", Value: "org-a"},
 		}}, true},
 		{"not", Condition{Op: "not", Items: []Condition{{Op: "eq", Path: "request.tenant_id", Value: "org-b"}}}, true},
-		{"time-in day", Condition{Op: "time-in", Path: "request.time", Window: []string{"08:00", "22:00"}}, true},
-		{"time-in night", Condition{Op: "time-in", Path: "request.time", Window: []string{"11:00", "09:00"}}, false},
 		{"between", Condition{Op: "between", Path: "request.params.amount", Window: []string{"1", "1000"}}, true},
 		{"in", Condition{Op: "in", Path: "request.tenant_id", Value: []any{"org-a", "org-b"}}, true},
 		{"is-null missing", Condition{Op: "is-null", Path: "request.missing"}, true},
@@ -184,67 +120,6 @@ func TestConditionEvalErrors(t *testing.T) {
 }
 
 // --- flow semantics ----------------------------------------------------
-
-func TestFlowBreak(t *testing.T) {
-	flow := Flow{Steps: []Step{{
-		Kind: "for", Var: "i", From: 0, To: 10,
-		Do: []Step{
-			{Kind: "if", Condition: &Condition{Op: "eq", Path: "i", Value: float64(3)},
-				Then: []Step{{Kind: "break"}}},
-		},
-	}}}
-	fc := ctxWith(nil, nil)
-	b := NewBudget()
-	if err := RunFlow(flow, fc, b); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if fc.Vars["i"] != 3 {
-		t.Fatalf("expected break at i=3, got %v", fc.Vars["i"])
-	}
-	if b.iterations != 4 {
-		t.Fatalf("expected 4 iterations, got %d", b.iterations)
-	}
-}
-
-func TestFlowRetry(t *testing.T) {
-	attempts := 0
-	handler := func(op string, vars, req map[string]any) (map[string]any, error) {
-		if op != "db:flaky" {
-			return nil, fmt.Errorf("unknown op")
-		}
-		attempts++
-		if attempts < 3 {
-			return nil, fmt.Errorf("transient failure")
-		}
-		return map[string]any{"done": true}, nil
-	}
-	flow := Flow{Steps: []Step{{
-		Name: "flaky", Kind: "retry", MaxRetries: 2,
-		Steps: []Step{{Kind: "op", Op: "db:flaky"}},
-	}}}
-	fc := &FlowContext{Vars: map[string]any{}, Request: map[string]any{}, Handler: handler}
-	if err := RunFlow(flow, fc, NewBudget()); err != nil {
-		t.Fatalf("retry should succeed: %v", err)
-	}
-	if attempts != 3 || fc.Vars["done"] != true {
-		t.Fatalf("attempts=%d done=%v", attempts, fc.Vars["done"])
-	}
-}
-
-func TestFlowRetryExhausted(t *testing.T) {
-	handler := func(op string, vars, req map[string]any) (map[string]any, error) {
-		return nil, fmt.Errorf("always failing")
-	}
-	flow := Flow{Steps: []Step{{
-		Name: "bad", Kind: "retry", MaxRetries: 2,
-		Steps: []Step{{Kind: "op", Op: "db:flaky"}},
-	}}}
-	fc := &FlowContext{Vars: map[string]any{}, Request: map[string]any{}, Handler: handler}
-	err := RunFlow(flow, fc, NewBudget())
-	if err == nil || !strings.Contains(err.Error(), "exhausted") {
-		t.Fatalf("expected retry exhaustion, got %v", err)
-	}
-}
 
 // --- rule validation ---------------------------------------------------
 
@@ -288,7 +163,7 @@ func TestSignatureRoundtrip(t *testing.T) {
 	if err := os.WriteFile(rulePath, []byte(ruleJSON), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	certPath, keyPath, cert, err := GenSignerCert(dir)
+	certPath, keyPath, cert, err := genSignerForRules(t, dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -338,11 +213,11 @@ func TestBudgetDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load defaults: %v", err)
 	}
-	if def.MaxIterations != 1000 || def.MaxSteps != 10000 {
+	if def.MaxSteps != 10000 {
 		t.Fatalf("unexpected defaults: %+v", def)
 	}
 	b := BudgetFromDefaults(def)
-	if b.MaxIterations != 1000 || b.MaxSteps != 10000 {
+	if b.MaxSteps != 10000 {
 		t.Fatalf("budget not built from defaults: %+v", b)
 	}
 }
@@ -387,16 +262,18 @@ func TestPhaseTwoExecutor(t *testing.T) {
 	if dec2.Allow {
 		t.Fatalf("expected deny for wrong tenant")
 	}
-	// nested loop rule -> static bounds error
+	// excessive nesting -> static bounds error (loops and retries were
+	// removed from the execution language on 2026-09-10; nesting depth is
+	// the remaining statically-checked structural axis)
+	deep := []Step{{Kind: "op", Op: "noop"}}
+	for i := 0; i < 100; i++ {
+		deep = []Step{{Kind: "seq", Steps: deep}}
+	}
 	badRule := *rule
-	badRule.Flow = &Flow{Steps: []Step{{
-		Kind: "while", Condition: &Condition{Op: "eq", Path: "flag", Value: true},
-		Do: []Step{{Kind: "while", Condition: &Condition{Op: "eq", Path: "flag", Value: true},
-			Do: []Step{{Kind: "op", Op: "noop"}}}}},
-	}}
+	badRule.Flow = &Flow{Steps: deep}
 	ex2 := &RuleExecutor{Rule: &badRule, Budget: NewBudget(), Handler: demoHandler}
 	if _, err := ex2.Decide(DecisionInput{Request: map[string]any{"flag": true}}); err == nil {
-		t.Fatalf("nested loop must be rejected by phase-two static bounds")
+		t.Fatalf("excessive nesting must be rejected by phase-two static bounds")
 	}
 
 }
@@ -420,7 +297,6 @@ func TestHTTPRequestMapping(t *testing.T) {
 	okCtx := &pki.PluginContext{
 		AgentId:  "agent:db-analyst-01",
 		ClientCN: "zhangsan",
-		Roles:    []string{"readonly"},
 		Target:   "query:SELECT",
 		Method:   "GET",
 		Path:     "/api/customers",

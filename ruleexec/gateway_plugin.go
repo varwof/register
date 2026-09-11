@@ -55,8 +55,7 @@ func (p *RulePlugin) Execute(cap *pki.Capability, ctx *pki.PluginContext) (*pki.
 		Decision: pki.PluginAllow,
 		Reason:   fmt.Sprintf("rule %s ok", p.exec.Rule.RuleID),
 		Metadata: map[string]string{
-			"steps":      fmt.Sprintf("%d", dec.Steps),
-			"iterations": fmt.Sprintf("%d", dec.Iterations),
+			"steps": fmt.Sprintf("%d", dec.Steps),
 		},
 	}, nil
 }

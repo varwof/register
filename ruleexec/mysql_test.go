@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"fmt"
 	"github.com/varwof/register"
 )
 
@@ -30,7 +31,7 @@ func TestMySQLScenarioV2(t *testing.T) {
 	if err := os.WriteFile(rulePath, []byte(ruleJSON), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	certPath, keyPath, cert, err := GenSignerCert(dir)
+	certPath, keyPath, cert, err := genSignerForRules(t, dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -42,13 +43,16 @@ func TestMySQLScenarioV2(t *testing.T) {
 	}
 
 	// 2) SQL generation (the MySQL translator)
-	sql, err := GenerateSelectSQL(rule.Params)
+	sql, args, err := GenerateSelectSQL(rule.Params)
 	if err != nil {
 		t.Fatalf("sql: %v", err)
 	}
-	want := "SELECT `id`, `name` FROM `customers` WHERE (`tenant_id` = 'org-a') LIMIT 100"
+	want := "SELECT `id`, `name` FROM `customers` WHERE (BINARY `tenant_id` = ?) LIMIT 100"
 	if sql != want {
 		t.Fatalf("sql mismatch:\n got: %s\nwant: %s", sql, want)
+	}
+	if len(args) != 1 || args[0] != "org-a" {
+		t.Fatalf("args mismatch: %v", args)
 	}
 
 	// 3) conditions + flow through the phase-two executor
@@ -70,22 +74,26 @@ func TestMySQLScenarioV2(t *testing.T) {
 	}
 
 	// 4) permission matrix: 张三 vs 李四 vs 越权列 vs 错租户
-	zhang := sqlForParams(t, `{"tables":["customers"],"columns":{"customers":["id","name"]},
+	zhangSQL, zhangArgs := sqlForParams(t, `{"tables":["customers"],"columns":{"customers":["id","name"]},
 		"filter_columns":{"customers":["tenant_id"]},
 		"row_filter":{"customers":{"column":"tenant_id","op":"=","value":"org-a"}},
 		"limit":{"max":100}}`)
-	li := sqlForParams(t, `{"tables":["customers"],"columns":{"customers":["id","name","email"]},
+	liSQL, liArgs := sqlForParams(t, `{"tables":["customers"],"columns":{"customers":["id","name","email"]},
 		"filter_columns":{"customers":["tenant_id"]},
 		"row_filter":{"customers":{"column":"tenant_id","op":"=","value":"org-b"}},
 		"limit":{"max":50}}`)
-	if zhang == li {
-		t.Fatalf("different users must produce different SQL")
+	if zhangSQL == liSQL && fmt.Sprint(zhangArgs) == fmt.Sprint(liArgs) {
+		t.Fatalf("different users must produce different SQL/args")
 	}
-	if !jsonContains(zhang, "org-a") || !jsonContains(li, "org-b") {
-		t.Fatalf("tenant isolation missing: zhang=%s li=%s", zhang, li)
+	// Bind parameters carry the tenant; the statement text must not.
+	if len(zhangArgs) != 1 || zhangArgs[0] != "org-a" || len(liArgs) != 1 || liArgs[0] != "org-b" {
+		t.Fatalf("tenant isolation missing: zhang=%v li=%v", zhangArgs, liArgs)
 	}
-	if jsonContains(zhang, "`email`") {
-		t.Fatalf("zhang must not see email column: %s", zhang)
+	if jsonContains(zhangSQL, "org-a") || jsonContains(liSQL, "org-b") {
+		t.Fatalf("tenant value must not appear in SQL text")
+	}
+	if jsonContains(zhangSQL, "`email`") {
+		t.Fatalf("zhang must not see email column: %s", zhangSQL)
 	}
 
 	// 越权列：Agent 声明 ssn，不在 grant 列内 -> 子集检查拒绝
@@ -109,7 +117,7 @@ func TestMySQLScenarioV2(t *testing.T) {
 	}
 }
 
-func sqlForParams(t *testing.T, raw string) string {
+func sqlForParams(t *testing.T, raw string) (string, []any) {
 	t.Helper()
 	rule, err := LoadRuleBytes([]byte(`{
 		"rule_id": "m", "version": "1.0.0",
@@ -122,11 +130,11 @@ func sqlForParams(t *testing.T, raw string) string {
 	if err := rule.Validate(demoRegistry()); err != nil {
 		t.Fatal(err)
 	}
-	sql, err := GenerateSelectSQL(rule.Params)
+	sql, args, err := GenerateSelectSQL(rule.Params)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return sql
+	return sql, args
 }
 
 func jsonContains(s, sub string) bool {

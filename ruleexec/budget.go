@@ -13,7 +13,6 @@ type BudgetKind int
 
 const (
 	KindSteps BudgetKind = iota
-	KindIterations
 	KindDepth
 	KindNesting
 	KindTimeout
@@ -23,8 +22,6 @@ func (k BudgetKind) String() string {
 	switch k {
 	case KindSteps:
 		return "steps"
-	case KindIterations:
-		return "iterations"
 	case KindDepth:
 		return "depth"
 	case KindNesting:
@@ -49,32 +46,30 @@ func (e *BudgetError) Error() string {
 // Default budgets (to be published with the scheme spec; see
 // docs/database-scheme-design.md §7).
 const (
-	DefaultMaxSteps      = 10000
-	DefaultMaxIterations = 1000
-	DefaultMaxDepth      = 64
-	DefaultMaxNesting    = 64
+	DefaultMaxSteps   = 10000
+	DefaultMaxDepth   = 64
+	DefaultMaxNesting = 64
 )
 
 // Budget enforces the execution budget for conditions and flows.
+// Since loops and retries were removed (2026-09-10) a flow is a finite tree,
+// so the budget is a defence-in-depth guard rather than the termination argument.
 type Budget struct {
-	MaxSteps      int64
-	MaxIterations int64
-	MaxDepth      int
-	MaxNesting    int
-	Deadline      time.Time
+	MaxSteps   int64
+	MaxDepth   int
+	MaxNesting int
+	Deadline   time.Time
 
-	steps      int64
-	iterations int64
-	nesting    int
+	steps   int64
+	nesting int
 }
 
 // NewBudget returns a budget with the specification defaults.
 func NewBudget() *Budget {
 	return &Budget{
-		MaxSteps:      DefaultMaxSteps,
-		MaxIterations: DefaultMaxIterations,
-		MaxDepth:      DefaultMaxDepth,
-		MaxNesting:    DefaultMaxNesting,
+		MaxSteps:   DefaultMaxSteps,
+		MaxDepth:   DefaultMaxDepth,
+		MaxNesting: DefaultMaxNesting,
 	}
 }
 
@@ -86,15 +81,6 @@ func (b *Budget) Step() error {
 	}
 	if !b.Deadline.IsZero() && time.Now().After(b.Deadline) {
 		return &BudgetError{Kind: KindTimeout}
-	}
-	return nil
-}
-
-// Iteration charges one loop iteration (accumulated across all loops).
-func (b *Budget) Iteration() error {
-	b.iterations++
-	if b.iterations > b.MaxIterations {
-		return &BudgetError{Kind: KindIterations, Used: b.iterations, Max: b.MaxIterations}
 	}
 	return nil
 }
@@ -121,10 +107,7 @@ func (b *Budget) Exit() {
 // Steps returns the current step count.
 func (b *Budget) Steps() int64 { return b.steps }
 
-// Iterations returns the current iteration count.
-func (b *Budget) Iterations() int64 { return b.iterations }
-
 // Stats returns the current counters (for audit output).
-func (b *Budget) Stats() (steps, iterations int64) {
-	return b.steps, b.iterations
+func (b *Budget) Stats() (steps int64) {
+	return b.steps
 }

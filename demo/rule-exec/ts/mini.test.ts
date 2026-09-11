@@ -2,8 +2,9 @@
 // Mirrors register/demo/rule-exec Go tests.
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import {
-  Budget, BudgetError, DefaultMaxIterations,
+  Budget, BudgetError,
   evalCondition, runFlow, checkStaticBounds,
   type Condition, type Flow, type Step, type FlowContext,
 } from "./mini.ts";
@@ -27,38 +28,17 @@ function wantBudgetKind(fn: () => void, kind: string): void {
   assert.equal((err as BudgetError).kind, kind);
 }
 
-test("TS: infinite while stopped by iteration budget", () => {
-  const flow: Flow = {
-    steps: [{ kind: "while", condition: { op: "eq", path: "flag", value: true }, do: [{ kind: "op", op: "noop" }] }],
-  };
-  const b = new Budget();
-  wantBudgetKind(() => runFlow(flow, ctxWith({ flag: true }, {}), b), "iterations");
-  assert.equal(b.iterations, DefaultMaxIterations + 1);
-});
 
-test("TS: nested loops rejected statically", () => {
-  const inner: Step[] = [{ kind: "for", from: 0, to: 10, do: [{ kind: "op", op: "noop" }] }];
-  const flow: Flow = { steps: [{ kind: "for", from: 0, to: 10, do: inner }] };
-  assert.throws(() => checkStaticBounds(flow, new Budget()), /nested loop/);
-  // while -> if -> while is also a nested loop
-  const flow2: Flow = {
-    steps: [{ kind: "while", condition: { op: "eq", path: "flag", value: true },
-      do: [{ kind: "if", condition: { op: "eq", path: "flag", value: true },
-        then: [{ kind: "while", condition: { op: "eq", path: "flag", value: true }, do: [{ kind: "op", op: "noop" }] }] }] }],
-  };
-  assert.throws(() => checkStaticBounds(flow2, new Budget()), /nested loop/);
-});
 
-test("TS: if<->while nesting allowed", () => {
-  const wif: Flow = { steps: [{ kind: "while", condition: { op: "eq", path: "flag", value: true }, do: [{ kind: "if", condition: { op: "eq", path: "flag", value: false }, then: [{ kind: "op", op: "noop" }] }] }] };
-  const fw: Flow = { steps: [{ kind: "if", condition: { op: "eq", path: "flag", value: false }, then: [{ kind: "while", condition: { op: "eq", path: "flag", value: true }, do: [{ kind: "op", op: "noop" }] }] }] };
-  checkStaticBounds(wif, new Budget());
-  checkStaticBounds(fw, new Budget());
-});
 
-test("TS: static huge loop rejected", () => {
-  const flow: Flow = { steps: [{ kind: "for", from: 0, to: 1_000_000_000, do: [{ kind: "op", op: "noop" }] }] };
-  assert.throws(() => checkStaticBounds(flow, new Budget()), /static bound/);
+
+test("TS: if/seq nesting allowed, excessive nesting rejected", () => {
+  const ok: Flow = { steps: [{ kind: "if", condition: { op: "eq", path: "flag", value: false },
+    then: [{ kind: "seq", steps: [{ kind: "op", op: "noop" }] }] }] };
+  checkStaticBounds(ok, new Budget());
+  let deep: Step[] = [{ kind: "op", op: "noop" }];
+  for (let i = 0; i < 100; i++) deep = [{ kind: "seq", steps: deep }];
+  assert.throws(() => checkStaticBounds({ steps: deep }, new Budget()), /nesting depth/);
 });
 
 test("TS: condition evaluation", () => {
@@ -76,8 +56,6 @@ test("TS: condition evaluation", () => {
       { op: "eq", path: "request.tenant_id", value: "org-a" },
       { op: "lte", path: "request.params.amount", value: 1000 },
     ] }, true],
-    [{ op: "time-in", path: "request.time", window: ["08:00", "22:00"] }, true],
-    [{ op: "time-in", path: "request.time", window: ["11:00", "09:00"] }, false],
     [{ op: "between", path: "request.params.amount", window: ["1", "1000"] }, true],
     [{ op: "in", path: "request.tenant_id", value: ["org-a", "org-b"] }, true],
   ];
@@ -87,31 +65,28 @@ test("TS: condition evaluation", () => {
   assert.throws(() => evalCondition({ op: "bogus" }, ctx, new Budget(), 0), /unknown condition op/);
 });
 
-test("TS: flow break and retry", () => {
-  const flow: Flow = {
-    steps: [{ kind: "for", var: "i", from: 0, to: 10,
-      do: [{ kind: "if", condition: { op: "eq", path: "i", value: 3 }, then: [{ kind: "break" }] }] }],
+test("condition vectors (shared truth table with Go)", () => {
+  const path = new URL("../../../ruleexec/testdata/condition-vectors.json", import.meta.url);
+  const file = JSON.parse(readFileSync(path, "utf8")) as {
+    cases: {
+      id: string; ctx: Record<string, unknown>; condition: Condition;
+      derivation: string; expect: { result?: boolean; error?: boolean };
+    }[];
   };
-  const fc = ctxWith({}, {});
-  const b = new Budget();
-  runFlow(flow, fc, b);
-  assert.equal(fc.vars.i, 3);
-  assert.equal(b.iterations, 4);
-
-  let attempts = 0;
-  const flaky: Flow = { steps: [{ name: "f", kind: "retry", maxRetries: 2, steps: [{ kind: "op", op: "db:flaky" }] }] };
-  const fc2: FlowContext = {
-    vars: {},
-    request: {},
-    handler: (op, vars) => {
-      if (op !== "db:flaky") throw new Error("unknown op");
-      attempts++;
-      if (attempts < 3) throw new Error("transient");
-      vars.done = true;
-      return {};
-    },
-  };
-  runFlow(flaky, fc2, new Budget());
-  assert.equal(attempts, 3);
-  assert.equal(fc2.vars.done, true);
+  assert.ok(file.cases.length > 0, "no condition vectors");
+  for (const c of file.cases) {
+    let got: boolean | undefined;
+    let err: unknown;
+    try {
+      got = evalCondition(c.condition, c.ctx, new Budget(), 0);
+    } catch (e) {
+      err = e;
+    }
+    if (c.expect.error) {
+      assert.ok(err !== undefined, `${c.id}: expected an error (${c.derivation})`);
+      continue;
+    }
+    assert.equal(err, undefined, `${c.id}: unexpected error ${String(err)}`);
+    assert.equal(got, c.expect.result, `${c.id}: ${c.derivation}`);
+  }
 });

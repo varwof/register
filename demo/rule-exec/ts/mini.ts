@@ -4,13 +4,12 @@
 // or WebCrypto APIs.
 
 export const DefaultMaxSteps = 10000;
-export const DefaultMaxIterations = 1000;
 export const DefaultMaxDepth = 64;
 export const DefaultMaxNesting = 64;
 
 const KNOWN_CONDITION_OPS = new Set([
   "and", "or", "not", "eq", "neq", "lt", "lte", "gt", "gte",
-  "in", "contains", "between", "time-in", "is-null",
+  "in", "between", "is-null",
 ]);
 
 export class BudgetError extends Error {
@@ -29,23 +28,19 @@ export class BudgetError extends Error {
 
 export class Budget {
   steps = 0;
-  iterations = 0;
   nesting = 0;
   maxSteps: number;
-  maxIterations: number;
   maxDepth: number;
   maxNesting: number;
   deadline?: number;
 
   constructor(
     maxSteps: number = DefaultMaxSteps,
-    maxIterations: number = DefaultMaxIterations,
     maxDepth: number = DefaultMaxDepth,
     maxNesting: number = DefaultMaxNesting,
     deadline?: number,
   ) {
     this.maxSteps = maxSteps;
-    this.maxIterations = maxIterations;
     this.maxDepth = maxDepth;
     this.maxNesting = maxNesting;
     this.deadline = deadline;
@@ -58,13 +53,6 @@ export class Budget {
     }
     if (this.deadline !== undefined && Date.now() > this.deadline) {
       throw new BudgetError("timeout", 0, 0);
-    }
-  }
-
-  iteration(): void {
-    this.iterations++;
-    if (this.iterations > this.maxIterations) {
-      throw new BudgetError("iterations", this.iterations, this.maxIterations);
     }
   }
 
@@ -82,8 +70,8 @@ export class Budget {
     if (this.nesting > 0) this.nesting--;
   }
 
-  stats(): { steps: number; iterations: number } {
-    return { steps: this.steps, iterations: this.iterations };
+  stats(): { steps: number } {
+    return { steps: this.steps };
   }
 }
 
@@ -102,12 +90,7 @@ export interface Step {
   condition?: Condition;
   then?: Step[];
   else?: Step[];
-  var?: string;
-  from?: number;
-  to?: number;
-  maxRetries?: number;
   steps?: Step[];
-  do?: Step[];
 }
 
 export interface Flow {
@@ -139,7 +122,15 @@ function resolvePath(ctx: Record<string, unknown>, path: string): { v: unknown; 
   return { v: cur, ok: true };
 }
 
+// toNum accepts NUMERIC values only (no string parsing): comparisons must not
+// rely on implicit type coercion ("500" !== 500).
 function toNum(v: unknown): number | null {
+  return typeof v === "number" ? v : null;
+}
+
+// boundNum parses a declared window bound ("1", "1000").  Window bounds are
+// strings by AST design; only here is a string parsed as a number.
+function boundNum(v: unknown): number | null {
   if (typeof v === "number") return v;
   if (typeof v === "string") {
     const n = Number(v);
@@ -162,20 +153,20 @@ function deepEqual(a: unknown, b: unknown): boolean {
   return false;
 }
 
-function parseHHMM(s: string): number | null {
-  const m = /^(\d{2}):(\d{2})$/.exec(s);
-  if (!m) return null;
-  const h = Number(m[1]);
-  const mi = Number(m[2]);
-  if (h > 23 || mi > 59) return null;
-  return h * 60 + mi;
-}
-
 function evalLeaf(op: string, got: unknown, want: unknown, window?: string[]): boolean {
   switch (op) {
-    case "eq": return deepEqual(got, want);
-    case "neq": return !deepEqual(got, want);
+    case "eq": {
+      // NULL is never equal (SQL: `col = NULL` matches no rows)
+      if (got === null || got === undefined || want === null || want === undefined) return false;
+      return deepEqual(got, want);
+    }
+    case "neq": {
+      if (got === null || got === undefined || want === null || want === undefined) return false;
+      return !deepEqual(got, want);
+    }
     case "lt": case "lte": case "gt": case "gte": {
+      // comparison with NULL is never true
+      if (got === null || got === undefined || want === null || want === undefined) return false;
       const g = toNum(got);
       const w = toNum(want);
       if (g === null || w === null) throw new Error(`op ${op} requires numeric operands`);
@@ -188,31 +179,18 @@ function evalLeaf(op: string, got: unknown, want: unknown, window?: string[]): b
     }
     case "in": {
       if (!Array.isArray(want)) throw new Error("op in requires a list value");
-      return want.some((x) => deepEqual(got, x));
-    }
-    case "contains": {
-      if (typeof got !== "string" || typeof want !== "string") throw new Error("op contains requires strings");
-      return got.includes(want);
+      if (got === null || got === undefined) return false; // NULL is in no list
+      return want.some((x) => x !== null && x !== undefined && deepEqual(got, x));
     }
     case "between": {
       if (!window || window.length !== 2) throw new Error("op between requires window [lo, hi]");
+      if (got === null || got === undefined || window[0] === null || window[1] === null ||
+          window[0] === undefined || window[1] === undefined) return false;
       const g = toNum(got);
-      const lo = toNum(window[0]);
-      const hi = toNum(window[1]);
+      const lo = boundNum(window[0]);
+      const hi = boundNum(window[1]);
       if (g === null || lo === null || hi === null) throw new Error("op between requires numeric operands");
       return g >= lo && g <= hi;
-    }
-    case "time-in": {
-      if (!window || window.length !== 2) throw new Error("op time-in requires window [start, end]");
-      if (typeof got !== "string") throw new Error("op time-in requires an RFC3339 time string");
-      const t = new Date(got);
-      if (Number.isNaN(t.getTime())) throw new Error("op time-in: bad time");
-      const cur = t.getUTCHours() * 60 + t.getUTCMinutes();
-      const start = parseHHMM(window[0]);
-      const end = parseHHMM(window[1]);
-      if (start === null || end === null) throw new Error("op time-in: invalid window");
-      if (start <= end) return cur >= start && cur <= end;
-      return cur >= start || cur <= end;
     }
     case "is-null":
       return got === null || got === undefined;
@@ -258,16 +236,6 @@ export function evalCondition(c: Condition, ctx: Record<string, unknown>, b: Bud
   }
 }
 
-class FlowSignal extends Error {
-  kind: "break" | "continue";
-
-  constructor(kind: "break" | "continue") {
-    super(`flow: ${kind}`);
-    this.name = "FlowSignal";
-    this.kind = kind;
-  }
-}
-
 function evalContext(fc: FlowContext): Record<string, unknown> {
   const m: Record<string, unknown> = { ...fc.vars };
   m.request = fc.request;
@@ -291,62 +259,9 @@ function runSteps(steps: Step[], fc: FlowContext, b: Budget, depth: number): voi
           else runSteps(st.else ?? [], fc, b, depth + 1);
           break;
         }
-        case "while": {
-          while (true) {
-            b.iteration();
-            const ok = evalCondition(st.condition!, evalContext(fc), b, depth + 1);
-            if (!ok) break;
-            try {
-              runSteps(st.do ?? [], fc, b, depth + 1);
-            } catch (e) {
-              if (e instanceof FlowSignal) {
-                if (e.kind === "break") break;
-                continue;
-              }
-              throw e;
-            }
-          }
-          break;
-        }
-        case "for": {
-          for (let i = st.from ?? 0; i < (st.to ?? 0); i++) {
-            b.iteration();
-            if (st.var) fc.vars[st.var] = i;
-            try {
-              runSteps(st.do ?? [], fc, b, depth + 1);
-            } catch (e) {
-              if (e instanceof FlowSignal) {
-                if (e.kind === "break") break;
-                continue;
-              }
-              throw e;
-            }
-          }
-          break;
-        }
-        case "retry": {
-          let last: unknown;
-          for (let attempt = 0; attempt <= (st.maxRetries ?? 0); attempt++) {
-            b.iteration();
-            try {
-              runSteps(st.steps ?? [], fc, b, depth + 1);
-              last = undefined;
-              break;
-            } catch (e) {
-              if (e instanceof FlowSignal) throw e;
-              last = e;
-            }
-          }
-          if (last !== undefined) throw new Error(`retry ${st.name ?? ""} exhausted after ${(st.maxRetries ?? 0) + 1} attempts: ${String(last)}`);
-          break;
-        }
         case "seq":
           runSteps(st.steps ?? [], fc, b, depth + 1);
           break;
-        case "break":
-          throw new FlowSignal("break");
-        case "continue":
-          throw new FlowSignal("continue");
         default:
           throw new Error(`unknown step kind ${st.kind}`);
       }
@@ -361,35 +276,21 @@ export function runFlow(f: Flow, fc: FlowContext, b: Budget): void {
 }
 
 export function checkStaticBounds(f: Flow, b: Budget): void {
-  walkBounds(f.steps, b, 0);
+  walkBounds(f.steps, b, 1);
 }
 
-function walkBounds(steps: Step[], b: Budget, loopDepth: number): void {
+function walkBounds(steps: Step[], b: Budget, depth: number): void {
+  if (depth > b.maxNesting) {
+    throw new Error(`static bound check: nesting depth ${depth} > budget ${b.maxNesting}`);
+  }
   for (const st of steps) {
     switch (st.kind) {
-      case "for":
-      case "while":
-        if (loopDepth >= 1) throw new Error(`static bound check: nested loop ${st.name ?? ""} (loop nesting is forbidden)`);
-        if (st.kind === "for") {
-          const n = (st.to ?? 0) - (st.from ?? 0);
-          if (n > b.maxIterations) {
-            throw new Error(`static bound check: for loop ${st.name ?? ""} iterates ${n} times > budget ${b.maxIterations}`);
-          }
-        }
-        walkBounds(st.do ?? [], b, loopDepth + 1);
-        break;
       case "if":
-        walkBounds(st.then ?? [], b, loopDepth);
-        walkBounds(st.else ?? [], b, loopDepth);
-        break;
-      case "retry":
-        if ((st.maxRetries ?? 0) + 1 > b.maxIterations) {
-          throw new Error(`static bound check: retry ${st.name ?? ""} allows ${(st.maxRetries ?? 0) + 1} attempts > budget ${b.maxIterations}`);
-        }
-        walkBounds(st.steps ?? [], b, loopDepth);
+        walkBounds(st.then ?? [], b, depth + 1);
+        walkBounds(st.else ?? [], b, depth + 1);
         break;
       case "seq":
-        walkBounds(st.steps ?? [], b, loopDepth);
+        walkBounds(st.steps ?? [], b, depth + 1);
         break;
     }
   }

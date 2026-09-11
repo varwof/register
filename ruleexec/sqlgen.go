@@ -9,11 +9,16 @@ import (
 	"strings"
 )
 
-// GenerateSelectSQL renders the MySQL SQL for a database-v1
-// query:SELECT rule (v1 contract: exactly one table). The params must
-// already have passed Validate (rule.go); this function is the
-// "translator" that turns the structured contract into SQL.
-func GenerateSelectSQL(raw json.RawMessage) (string, error) {
+// GenerateSelectSQL renders the MySQL SQL for a database-v1 query:SELECT rule
+// (v1 contract: exactly one table).  The params must already have passed
+// Validate (rule.go); this function is the "translator" that turns the
+// structured contract into a PARAMETERIZED statement.
+//
+// All values are returned as placeholders (?) plus args, in statement order:
+// no value is ever spliced into SQL text.  Identifiers (table/column names)
+// are still quoted with backticks, and are validated against the rule's
+// declared tables/columns before rendering.
+func GenerateSelectSQL(raw json.RawMessage) (string, []any, error) {
 	var p struct {
 		Tables    []string       `json:"tables"`
 		Columns   map[string]any `json:"columns"`
@@ -23,32 +28,34 @@ func GenerateSelectSQL(raw json.RawMessage) (string, error) {
 		} `json:"limit"`
 	}
 	if err := json.Unmarshal(raw, &p); err != nil {
-		return "", fmt.Errorf("params: %w", err)
+		return "", nil, fmt.Errorf("params: %w", err)
 	}
 	if len(p.Tables) != 1 {
-		return "", fmt.Errorf("v1 SELECT requires exactly one table")
+		return "", nil, fmt.Errorf("v1 SELECT requires exactly one table")
 	}
 	tbl := p.Tables[0]
 
 	cols, err := sqlColumnList(p.Columns[tbl], tbl)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 
 	var where string
+	var args []any
 	if filt, ok := p.RowFilter[tbl]; ok {
-		s, err := filterToSQL(filt)
+		s, a, err := filterToSQL(filt)
 		if err != nil {
-			return "", err
+			return "", nil, err
 		}
 		where = " WHERE " + s
+		args = a
 	}
 
 	var limit string
 	if p.Limit != nil && p.Limit.Max > 0 {
 		limit = fmt.Sprintf(" LIMIT %d", p.Limit.Max)
 	}
-	return fmt.Sprintf("SELECT %s FROM %s%s%s", cols, quoteIdent(tbl), where, limit), nil
+	return fmt.Sprintf("SELECT %s FROM %s%s%s", cols, quoteIdent(tbl), where, limit), args, nil
 }
 
 func sqlColumnList(v any, tbl string) (string, error) {
@@ -77,10 +84,10 @@ func sqlColumnList(v any, tbl string) (string, error) {
 
 // filterToSQL renders the structured filter AST as a MySQL WHERE
 // expression. Only structured predicates are accepted (no raw SQL).
-func filterToSQL(node any) (string, error) {
+func filterToSQL(node any) (string, []any, error) {
 	m, ok := node.(map[string]any)
 	if !ok {
-		return "", fmt.Errorf("filter must be an object")
+		return "", nil, fmt.Errorf("filter must be an object")
 	}
 	if col, ok := m["column"].(string); ok {
 		op, _ := m["op"].(string)
@@ -93,28 +100,30 @@ func filterToSQL(node any) (string, error) {
 		return renderList(" OR ", or)
 	}
 	if inner, ok := m["not"]; ok {
-		s, err := filterToSQL(inner)
+		s, a, err := filterToSQL(inner)
 		if err != nil {
-			return "", err
+			return "", nil, err
 		}
-		return "NOT (" + s + ")", nil
+		return "NOT (" + s + ")", a, nil
 	}
-	return "", fmt.Errorf("invalid filter structure")
+	return "", nil, fmt.Errorf("invalid filter structure")
 }
 
-func renderList(join string, items []any) (string, error) {
+func renderList(join string, items []any) (string, []any, error) {
 	if len(items) == 0 {
-		return "", fmt.Errorf("filter list must not be empty")
+		return "", nil, fmt.Errorf("filter list must not be empty")
 	}
 	parts := make([]string, 0, len(items))
+	var args []any
 	for _, it := range items {
-		s, err := filterToSQL(it)
+		s, a, err := filterToSQL(it)
 		if err != nil {
-			return "", err
+			return "", nil, err
 		}
 		parts = append(parts, "("+s+")")
+		args = append(args, a...)
 	}
-	return strings.Join(parts, join), nil
+	return strings.Join(parts, join), args, nil
 }
 
 // sqlOp maps the structured filter op to its SQL keyword form.
@@ -133,77 +142,73 @@ var sqlOp = map[string]string{
 	"is not null": "IS NOT NULL",
 }
 
-func renderCondition(col, op string, val any) (string, error) {
+func renderCondition(col, op string, val any) (string, []any, error) {
 	kw, ok := sqlOp[op]
 	if !ok {
-		return "", fmt.Errorf("unsupported filter op %q", op)
+		return "", nil, fmt.Errorf("unsupported filter op %q", op)
 	}
-	q := quoteIdent(col)
+	q := colExpr(col, val)
 	switch op {
 	case "=", "!=", "<", "<=", ">", ">=":
-		lit, err := sqlLiteral(val)
-		if err != nil {
-			return "", err
+		if val == nil {
+			return "", nil, fmt.Errorf("op %s: comparing to NULL is not supported; use \"is null\" / \"is not null\"", op)
 		}
-		return q + " " + kw + " " + lit, nil
+		return q + " " + kw + " ?", []any{val}, nil
 	case "in", "not in":
 		list, ok := val.([]any)
 		if !ok || len(list) == 0 {
-			return "", fmt.Errorf("op %s requires a non-empty list", op)
+			return "", nil, fmt.Errorf("op %s requires a non-empty list", op)
 		}
-		lits := make([]string, 0, len(list))
+		placeholders := make([]string, 0, len(list))
+		args := make([]any, 0, len(list))
 		for _, item := range list {
-			lit, err := sqlLiteral(item)
-			if err != nil {
-				return "", err
+			if item == nil {
+				return "", nil, fmt.Errorf("op %s: null elements are not allowed; use \"is null\" per column", op)
 			}
-			lits = append(lits, lit)
+			placeholders = append(placeholders, "?")
+			args = append(args, item)
 		}
-		return q + " " + kw + " (" + strings.Join(lits, ", ") + ")", nil
+		return q + " " + kw + " (" + strings.Join(placeholders, ", ") + ")", args, nil
 	case "between":
 		list, ok := val.([]any)
 		if !ok || len(list) != 2 {
-			return "", fmt.Errorf("op between requires [lo, hi]")
+			return "", nil, fmt.Errorf("op between requires [lo, hi]")
 		}
-		lo, err := sqlLiteral(list[0])
-		if err != nil {
-			return "", err
+		if list[0] == nil || list[1] == nil {
+			return "", nil, fmt.Errorf("op between: null bounds are not allowed")
 		}
-		hi, err := sqlLiteral(list[1])
-		if err != nil {
-			return "", err
-		}
-		return q + " " + kw + " " + lo + " AND " + hi, nil
+		return q + " " + kw + " ? AND ?", []any{list[0], list[1]}, nil
 	case "like":
-		lit, err := sqlLiteral(val)
-		if err != nil {
-			return "", err
+		if val == nil {
+			return "", nil, fmt.Errorf("op like: comparing to NULL is not supported")
 		}
-		return q + " " + kw + " " + lit, nil
+		return q + " " + kw + " ?", []any{val}, nil
 	case "is null", "is not null":
-		return q + " " + kw, nil
+		return q + " " + kw, nil, nil
 	}
-	return "", fmt.Errorf("unsupported filter op %q", op)
+	return "", nil, fmt.Errorf("unsupported filter op %q", op)
 }
 
-// sqlLiteral renders a JSON value as a MySQL literal.
-func sqlLiteral(v any) (string, error) {
-	switch t := v.(type) {
-	case json.Number:
-		return t.String(), nil
-	case float64:
-		return fmt.Sprintf("%v", t), nil
-	case bool:
-		if t {
-			return "TRUE", nil
-		}
-		return "FALSE", nil
+// colExpr renders a column reference used in a comparison.  String
+// comparisons are made case-sensitive with BINARY so that SQL matches the
+// in-memory condition semantics (which is byte-exact) even under MySQL's
+// default case-insensitive collations.  NULL comparisons are rejected by
+// the callers: use "is null" / "is not null".
+func colExpr(col string, val any) string {
+	q := quoteIdent(col)
+	switch v := val.(type) {
 	case string:
-		return "'" + strings.ReplaceAll(t, "'", "''") + "'", nil
-	case nil:
-		return "NULL", nil
+		return "BINARY " + q
+	case []any:
+		for _, it := range v {
+			if _, ok := it.(string); ok {
+				return "BINARY " + q
+			}
+		}
+		return q
+	default:
+		return q
 	}
-	return "", fmt.Errorf("unsupported literal type %T", v)
 }
 
 // quoteIdent quotes a MySQL identifier with backticks.

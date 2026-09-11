@@ -34,12 +34,6 @@
     "conditions": {
       "$ref": "#/definitions/condition"
     },
-    "roles": {
-      "type": "array",
-      "items": {
-        "type": "string"
-      }
-    },
     "constraints": {
       "type": "array",
       "items": {
@@ -70,9 +64,7 @@
             "gt",
             "gte",
             "in",
-            "contains",
             "between",
-            "time-in",
             "is-null"
           ]
         },
@@ -94,7 +86,8 @@
             "$ref": "#/definitions/condition"
           }
         }
-      }
+      },
+      "additionalProperties": false
     },
     "constraint": {
       "type": "object",
@@ -110,7 +103,8 @@
           "type": "string"
         },
         "params": {}
-      }
+      },
+      "additionalProperties": false
     },
     "step": {
       "type": "object",
@@ -126,12 +120,7 @@
           "enum": [
             "op",
             "if",
-            "while",
-            "for",
-            "retry",
-            "seq",
-            "break",
-            "continue"
+            "seq"
           ]
         },
         "op": {
@@ -152,32 +141,14 @@
             "$ref": "#/definitions/step"
           }
         },
-        "var": {
-          "type": "string"
-        },
-        "from": {
-          "type": "integer"
-        },
-        "to": {
-          "type": "integer"
-        },
-        "max_retries": {
-          "type": "integer",
-          "minimum": 0
-        },
         "steps": {
           "type": "array",
           "items": {
             "$ref": "#/definitions/step"
           }
-        },
-        "do": {
-          "type": "array",
-          "items": {
-            "$ref": "#/definitions/step"
-          }
         }
-      }
+      },
+      "additionalProperties": false
     },
     "flow": {
       "type": "object",
@@ -188,7 +159,9 @@
             "$ref": "#/definitions/step"
           }
         }
-      }
+      },
+      "additionalProperties": false
     }
-  }
+  },
+  "additionalProperties": false
 }

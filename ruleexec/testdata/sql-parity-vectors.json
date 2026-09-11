@@ -1,0 +1,45 @@
+{
+  "note": "SQL 一致性向量：Go 生成 SQL（MySQL 方言）→ SQLite 执行 → 结果必须与 expect_ids 一致。Python runner 会把 MySQL 的 `BINARY ` 前缀转成 SQLite 的 `COLLATE BINARY`，其余语义相同（= NULL 无行、IS NULL 有行、默认区分大小写）。",
+  "cases": [
+    {
+      "id": "sql-case-sensitive",
+      "params": {"tables":["customers"],"columns":{"customers":["id","tenant_id"]},"row_filter":{"customers":{"column":"tenant_id","op":"=","value":"org-a"}}},
+      "sql": "SELECT `id`, `tenant_id` FROM `customers` WHERE BINARY `tenant_id` = ?",
+      "args": ["org-a"],
+      "schema": "CREATE TABLE customers (id INTEGER PRIMARY KEY, tenant_id TEXT)",
+      "rows": [[1, "org-a"], [2, "ORG-A"]],
+      "expect_ids": [1],
+      "derivation": "字符串比较区分大小写（BINARY / COLLATE BINARY），与内存语义一致"
+    },
+    {
+      "id": "sql-is-null",
+      "params": {"tables":["items"],"columns":{"items":["id","note"]},"row_filter":{"items":{"column":"note","op":"is null"}}},
+      "sql": "SELECT `id`, `note` FROM `items` WHERE `note` IS NULL",
+      "args": [],
+      "schema": "CREATE TABLE items (id INTEGER PRIMARY KEY, note TEXT)",
+      "rows": [[1, "x"], [2, null]],
+      "expect_ids": [2],
+      "derivation": "null 只能由 IS NULL 命中；= NULL 由生成器直接拒绝"
+    },
+    {
+      "id": "sql-in",
+      "params": {"tables":["orders"],"columns":{"orders":["id","status"]},"row_filter":{"orders":{"column":"status","op":"in","value":["open","paid"]}}},
+      "sql": "SELECT `id`, `status` FROM `orders` WHERE BINARY `status` IN (?, ?)",
+      "args": ["open", "paid"],
+      "schema": "CREATE TABLE orders (id INTEGER PRIMARY KEY, status TEXT, amount INTEGER)",
+      "rows": [[1, "open", 5], [2, "paid", 50], [3, "closed", 500]],
+      "expect_ids": [1, 2],
+      "derivation": "IN 集合命中"
+    },
+    {
+      "id": "sql-between",
+      "params": {"tables":["orders"],"columns":{"orders":["id","amount"]},"row_filter":{"orders":{"column":"amount","op":"between","value":[10,100]}}},
+      "sql": "SELECT `id`, `amount` FROM `orders` WHERE `amount` BETWEEN ? AND ?",
+      "args": [10, 100],
+      "schema": "CREATE TABLE orders (id INTEGER PRIMARY KEY, status TEXT, amount INTEGER)",
+      "rows": [[1, "open", 5], [2, "paid", 50], [3, "closed", 500]],
+      "expect_ids": [2],
+      "derivation": "闭区间数值比较"
+    }
+  ]
+}

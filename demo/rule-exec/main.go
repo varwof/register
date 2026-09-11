@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/varwof/register"
+	"github.com/varwof/register/internal/rulesigner"
 	"github.com/varwof/register/ruleexec"
 )
 
@@ -35,11 +36,9 @@ const ruleJSON = `{
     "op": "and",
     "items": [
       { "op": "eq", "path": "request.tenant_id", "value": "org-a" },
-      { "op": "time-in", "path": "request.time", "window": ["08:00", "22:00"] },
       { "op": "lte", "path": "request.params.amount", "value": 1000 }
     ]
   },
-  "roles": ["readonly"],
   "constraints": [
     { "scheme": "varwof/constraint-v1", "id": "allowed-cidr", "params": ["10.0.0.0/8"] }
   ],
@@ -48,8 +47,7 @@ const ruleJSON = `{
       { "name": "query", "kind": "op", "op": "db:select" },
       { "kind": "if", "condition": { "op": "gt", "path": "rowCount", "value": 0 },
         "then": [ { "name": "mark", "kind": "op", "op": "db:update" } ] },
-      { "name": "notify", "kind": "retry", "max_retries": 2,
-        "steps": [ { "kind": "op", "op": "db:notify" } ] }
+      { "name": "notify", "kind": "op", "op": "db:notify" }
     ]
   }
 }`
@@ -64,7 +62,7 @@ func main() {
 		if err := os.MkdirAll(*outDir, 0o755); err != nil {
 			fatal(err)
 		}
-		certPath, keyPath, _, err := ruleexec.GenSignerCert(*outDir)
+		certPath, keyPath, _, err := rulesigner.GenSignerCert(*outDir)
 		if err != nil {
 			fatal(err)
 		}
@@ -89,11 +87,14 @@ func main() {
 	fmt.Printf("规则校验通过: %s v%s (%s:%s)\n", rule.RuleID, rule.Version, rule.Scheme, rule.Capability)
 
 	if *sqlOnly {
-		sql, err := ruleexec.GenerateSelectSQL(rule.Params)
+		sql, args, err := ruleexec.GenerateSelectSQL(rule.Params)
 		if err != nil {
 			fatal(err)
 		}
 		fmt.Println(sql)
+		if len(args) > 0 {
+			fmt.Printf("args: %v\n", args)
+		}
 		return
 	}
 
@@ -106,7 +107,7 @@ func main() {
 	if err := os.WriteFile(rulePath, []byte(ruleJSON), 0o644); err != nil {
 		fatal(err)
 	}
-	certPath, keyPath, cert, err := ruleexec.GenSignerCert(tmp)
+	certPath, keyPath, cert, err := rulesigner.GenSignerCert(tmp)
 	if err != nil {
 		fatal(err)
 	}
@@ -151,9 +152,9 @@ func main() {
 	if err := ruleexec.RunFlow(*rule.Flow, flowCtx, budget); err != nil {
 		fatal(err)
 	}
-	steps, iters := budget.Stats()
-	fmt.Printf("流程执行完成: rowCount=%v updated=%v (steps=%d, iterations=%d)\n",
-		flowCtx.Vars["rowCount"], flowCtx.Vars["updated"], steps, iters)
+	steps := budget.Stats()
+	fmt.Printf("流程执行完成: rowCount=%v updated=%v (steps=%d)\n",
+		flowCtx.Vars["rowCount"], flowCtx.Vars["updated"], steps)
 	fmt.Println("=== 端到端闭环验证通过：规则 → 签名 → 校验 → 条件 → 流程 ===")
 }
 

@@ -14,7 +14,7 @@ import (
 
 // SQLExecutor runs a generated SQL statement and returns rows as JSON
 // objects. The real implementation talks to MySQL; tests inject a fake.
-type SQLExecutor func(sql string) ([]map[string]any, error)
+type SQLExecutor func(sql string, args ...any) ([]map[string]any, error)
 
 // HTTPGateway is the reference "rule -> gateway -> mysql-api" chain: it
 // simulates the gateway admission path (mTLS identity via X-Client-CN),
@@ -79,17 +79,17 @@ func (g *HTTPGateway) handleRows(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sqlStr, err := GenerateSelectSQL(rule.Params)
+	sqlStr, args, err := GenerateSelectSQL(rule.Params)
 	if err != nil {
 		httpError(w, http.StatusBadGateway, err.Error())
 		return
 	}
-	rows, err := g.exec(sqlStr)
+	rows, err := g.exec(sqlStr, args...)
 	if err != nil {
 		httpError(w, http.StatusBadGateway, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"sql": sqlStr, "rows": rows})
+	writeJSON(w, http.StatusOK, map[string]any{"sql": sqlStr, "args": args, "rows": rows})
 }
 
 type stringSet map[string]struct{}
@@ -133,8 +133,8 @@ func writeJSON(w http.ResponseWriter, code int, v any) {
 
 // DBExecutor adapts a *sql.DB to SQLExecutor (real MySQL/MariaDB).
 func DBExecutor(db *sql.DB) SQLExecutor {
-	return func(q string) ([]map[string]any, error) {
-		rows, err := db.Query(q)
+	return func(q string, args ...any) ([]map[string]any, error) {
+		rows, err := db.Query(q, args...)
 		if err != nil {
 			return nil, err
 		}

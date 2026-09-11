@@ -14,12 +14,18 @@ import (
 // docs/database-scheme-design.md §7). Implementations MUST NOT relax
 // these values.
 type BudgetDefaults struct {
-	MaxSteps      int   `json:"max_steps"`
-	MaxIterations int   `json:"max_iterations"`
-	MaxDepth      int   `json:"max_depth"`
-	MaxNesting    int   `json:"max_nesting"`
-	WallClockMs   int64 `json:"wall_clock_ms"`
+	MaxSteps   int `json:"max_steps"`
+	MaxDepth   int `json:"max_depth"`
+	MaxNesting int `json:"max_nesting"`
 }
+
+// Published ceilings (see budget-defaults.json).  Implementations MUST NOT
+// relax these values; a file that asks for more is rejected.
+const (
+	MaxStepsCeiling   = 10000
+	MaxDepthCeiling   = 64
+	MaxNestingCeiling = 64
+)
 
 // LoadBudgetDefaults reads a published budget-defaults.json.
 func LoadBudgetDefaults(path string) (*BudgetDefaults, error) {
@@ -31,8 +37,12 @@ func LoadBudgetDefaults(path string) (*BudgetDefaults, error) {
 	if err := json.Unmarshal(data, &d); err != nil {
 		return nil, err
 	}
-	if d.MaxSteps <= 0 || d.MaxIterations <= 0 || d.MaxDepth <= 0 || d.MaxNesting <= 0 {
+	if d.MaxSteps <= 0 || d.MaxDepth <= 0 || d.MaxNesting <= 0 {
 		return nil, fmt.Errorf("invalid budget defaults")
+	}
+	if d.MaxSteps > MaxStepsCeiling ||
+		d.MaxDepth > MaxDepthCeiling || d.MaxNesting > MaxNestingCeiling {
+		return nil, fmt.Errorf("budget defaults must not relax published ceilings")
 	}
 	return &d, nil
 }
@@ -41,7 +51,6 @@ func LoadBudgetDefaults(path string) (*BudgetDefaults, error) {
 func BudgetFromDefaults(d *BudgetDefaults) *Budget {
 	b := NewBudget()
 	b.MaxSteps = int64(d.MaxSteps)
-	b.MaxIterations = int64(d.MaxIterations)
 	b.MaxDepth = d.MaxDepth
 	b.MaxNesting = d.MaxNesting
 	return b

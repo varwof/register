@@ -12,6 +12,12 @@ import (
 )
 
 func main() {
+	flag.Usage = func() {
+		fmt.Fprintf(os.Stderr, "Usage: sign -cert <signer.pem> -key <signer.key> -in <capability.json> [-out <file.p7s>]\n\n")
+		fmt.Fprintf(os.Stderr, "用 PKCS#7 签署 capability/规则 JSON 文件，产出 detached .p7s 签名（默认 -in + .p7s）。\n\n")
+		fmt.Fprintf(os.Stderr, "Flags:\n")
+		flag.PrintDefaults()
+	}
 	cert := flag.String("cert", "", "PEM certificate (signer + chain)")
 	key := flag.String("key", "", "PEM private key")
 	input := flag.String("in", "", "capability.json to sign")

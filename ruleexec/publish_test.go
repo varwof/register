@@ -34,7 +34,7 @@ func TestPublishRules(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	certPath, keyPath, cert, err := GenSignerCert(dir)
+	certPath, keyPath, cert, err := genSignerForRules(t, dir)
 	if err != nil {
 		t.Fatal(err)
 	}

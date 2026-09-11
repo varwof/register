@@ -34,7 +34,7 @@ func TestRegisterRulePluginsFromDir(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(rulesDir, "v1.0.json"), []byte(gwRuleJSON), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	certPath, keyPath, cert, err := GenSignerCert(dir)
+	certPath, keyPath, cert, err := genSignerForRules(t, dir)
 	if err != nil {
 		t.Fatal(err)
 	}

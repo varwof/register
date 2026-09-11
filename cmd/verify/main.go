@@ -13,6 +13,12 @@ import (
 )
 
 func main() {
+	flag.Usage = func() {
+		fmt.Fprintf(os.Stderr, "Usage: verify -in <capability.json> [-sig <file.p7s>] -CA <root.pem|dir>\n\n")
+		fmt.Fprintf(os.Stderr, "校验 detached PKCS#7 签名是否链到给定信任根；失败即非零退出。\n\n")
+		fmt.Fprintf(os.Stderr, "Flags:\n")
+		flag.PrintDefaults()
+	}
 	input := flag.String("in", "", "capability.json to verify")
 	sig := flag.String("sig", "", ".p7s signature file (default: in + .p7s)")
 	ca := flag.String("CA", "", "trust root certificate(s) file or directory")
