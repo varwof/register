@@ -150,7 +150,20 @@ means threading the registry (or a validation hook) into the publish/load paths.
 | missing required parameter / unknown parameter / type or range mismatch | validation fails (generation and publish stages) |
 | PKCS#7 missing, tampered, untrusted | load fails |
 | rule capability outside the **signer's own AIC grant** | load fails (`RuleWithinSignerGrant`) |
+| signer certificate carries no AIC extension at all | load fails — the signer must prove it may publish this rule |
 | budget exceeded | execution terminates with an explicit error code |
+
+## 8.1 Who may sign a rule
+
+Publication is not gated on the PKCS#7 chain alone.  The loader additionally requires
+the signing certificate to carry an **AIC extension** whose grant covers the rule's
+capability (`RuleWithinSignerGrant`) — otherwise any holder of a trusted signing
+certificate could publish policy that exceeds its own authority.
+
+Consequence for tests and tooling: `ruleexec.GenSignerCert` produces a plain
+self-signed certificate and is **not** sufficient to publish a rule.  Use
+`ruleexec.GenSignerCertWithCapabilities` / `GenSignerCertWithGrant` to build a signer
+that carries the grant the rule needs.
 
 ## 9. Relation to the capability list
 
