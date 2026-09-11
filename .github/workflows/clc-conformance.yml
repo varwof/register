@@ -1,0 +1,46 @@
+name: clc-conformance
+
+# CLC-v1 语义一致性：本仓（Go 参考实现）必须与 capability 仓的向量逐条一致
+# （verdict + 规范码 reason 双断言；失败时 vectors-run 退出码非 0）。
+# 依赖：向量在独立仓 varwof/capability，本 workflow 会浅克隆到 ../capability。
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  vectors:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+
+      - name: Fetch CLC-v1 vectors (capability repo)
+        run: git clone --depth 1 https://github.com/varwof/capability.git ../capability
+
+      - name: gofmt
+        run: test -z "$(gofmt -l .)"
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: go test
+        run: go test ./...
+
+      - name: CLC-v1 vectors (verdict + reason)
+        env:
+          CLC_VECTORS: ../capability/data/_vectors/clc-v1/vectors.json
+        run: go run ./cmd/vectors-run/
+
+      - name: P11 property (composition narrows only)
+        # -count=1 disables the test cache: the property corpus lives OUTSIDE
+        # this module, so a corpus change is invisible to Go's cache and a
+        # cached run would report the previous run's counters (it did: 281/274
+        # vs the real 299/290).
+        env:
+          CLC_PROPERTY_CASES: ../capability/data/_vectors/clc-v1/property-cases.json
+        run: go test -count=1 ./semantics/ -run TestIntersectionProperty -v

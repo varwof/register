@@ -34,16 +34,21 @@ func GenDocs(def *SchemeDefinition) (string, error) {
 	if def.Description != "" {
 		fmt.Fprintf(&b, "%s\n\n", def.Description)
 	}
-	fmt.Fprintf(&b, "完整能力标识格式：`%s:capability_id`（如 `%s:cert:issue`）。\n\n",
-		def.SchemeID, def.SchemeID)
+	entries := make([]CapabilityEntry, len(def.Capabilities))
+	copy(entries, def.Capabilities)
+	sort.Slice(entries, func(i, j int) bool { return entries[i].ID < entries[j].ID })
+
+	example := "capability_id"
+	if len(entries) > 0 && entries[0].ID != "" {
+		example = entries[0].ID
+	}
+	fmt.Fprintf(&b, "完整能力标识格式：`%s:capability_id`（如 `%s:%s`）。\n\n",
+		def.SchemeID, def.SchemeID, example)
 
 	// Capability catalog table
 	b.WriteString("## 能力目录\n\n")
 	b.WriteString("| 能力 | 摘要 | 相关能力 |\n")
 	b.WriteString("|------|------|----------|\n")
-	entries := make([]CapabilityEntry, len(def.Capabilities))
-	copy(entries, def.Capabilities)
-	sort.Slice(entries, func(i, j int) bool { return entries[i].ID < entries[j].ID })
 	for _, c := range entries {
 		summary := c.Summary
 		if summary == "" {

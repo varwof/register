@@ -103,6 +103,27 @@ func (r *Registry) ValidateClaims(claims []CapabilityClaim) []ClaimResult {
 	return results
 }
 
+// ValidateParams validates capability parameters against the scheme that
+// defines them.  It is the ONE parameter contract, used by both paths:
+//
+//   - the claims path (ValidateClaims -> signing an AIC), and
+//   - the rule path (ruleexec.Rule.Validate -> publishing/loading a rule).
+//
+// A capability that declares `params_schema` is validated against that
+// data-driven schema (which is where `required` lives); otherwise the flat
+// `parameters` contract is applied.  Scheme-specific structural rules that the
+// schema cannot express are still checked by ValidateSchemeParams.
+func (r *Registry) ValidateParams(scheme, capability string, params map[string]any) error {
+	def, ok := r.Get(scheme)
+	if !ok {
+		return fmt.Errorf("unknown scheme %q", scheme)
+	}
+	if params == nil {
+		params = map[string]any{}
+	}
+	return validateClaimParams(def, CapabilityClaim{SchemeID: scheme, Capability: capability, Parameters: params})
+}
+
 // validateClaimParams validates that all claimed parameters are within the capability definition.
 func validateClaimParams(def *SchemeDefinition, c CapabilityClaim) error {
 	var entry *CapabilityEntry

@@ -178,8 +178,31 @@ func validateJSONSchema(schema map[string]any, value any, defs map[string]any) e
 			}
 		}
 
-		// additionalProperties
-		if ap, ok := schema["additionalProperties"]; ok {
+		// additionalProperties — FAIL-CLOSED BY DEFAULT.
+		//
+		// A schema that declares `properties` but omits `additionalProperties`
+		// is treated as closed: an undeclared key is rejected.  JSON Schema
+		// itself defaults to permissive, but these schemas are a security
+		// contract for capability parameters, and a permissive default meant a
+		// typo ("tabel" for "tables") was accepted on the schema path while the
+		// flat-parameters path rejected it — two answers for one contract.  A
+		// capability that genuinely wants extra keys says so explicitly with
+		// `"additionalProperties": true` or a sub-schema.
+		ap, hasAP := schema["additionalProperties"]
+		if !hasAP {
+			// Only a schema that actually declares an object shape
+			// (`properties`) is closed.  A schema whose object constraint
+			// lives in oneOf/allOf branches (e.g. the recursive filter
+			// grammar) has no top-level properties and stays permissive here;
+			// its branches are validated on their own.
+			if len(props) > 0 {
+				for k := range obj {
+					if _, defined := props[k]; !defined {
+						return fmt.Errorf("additional property %q not allowed (declare it in params_schema, or set additionalProperties)", k)
+					}
+				}
+			}
+		} else {
 			switch apv := ap.(type) {
 			case bool:
 				if apv {

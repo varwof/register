@@ -172,10 +172,11 @@ func TestGenDocsContent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GenDocs: %v", err)
 	}
-	// 必须包含关键章节
+	// 必须包含关键章节。标识格式示例不再硬编码，而是取该方案排序后的首个能力
+	// （夹具中为 ca:info），因此这里断言派生结果而非固定的 cert:issue。
 	for _, want := range []string{
 		"权限说明", "能力目录", "能力详细语义", "通配符与匹配规则", "最小权限生成指南",
-		"`varwof/core:cert:issue`", "**何时需要**", "**何时不应授予**", "**示例**",
+		"`varwof/core:ca:info`", "**何时需要**", "**何时不应授予**", "**示例**",
 	} {
 		if !strings.Contains(md, want) {
 			t.Errorf("GenDocs missing %q", want)

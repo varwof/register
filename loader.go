@@ -9,7 +9,27 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 )
+
+// isIgnoredDataPath reports whether a path lies under a directory whose name
+// starts with "_" (tooling data such as _vectors/), which must never be
+// mistaken for scheme definitions.
+func isIgnoredDataPath(path string) bool {
+	for _, seg := range strings.Split(filepath.ToSlash(path), "/") {
+		if len(seg) > 0 && seg[0] == '_' {
+			return true
+		}
+	}
+	return false
+}
+
+// isVersionFileName reports whether a file name is a scheme data file:
+// "v" followed by a digit (v1.json, v1.0.json).  This keeps non-scheme JSON
+// such as default.json or vectors.json out of the loader.
+func isVersionFileName(base string) bool {
+	return len(base) >= 3 && base[0] == 'v' && base[1] >= '0' && base[1] <= '9'
+}
 
 // LoadFromFS loads all capability JSON files from an embedded filesystem.
 func LoadFromFS(fsys fs.FS) (map[string]*SchemeDefinition, error) {
@@ -19,10 +39,15 @@ func LoadFromFS(fsys fs.FS) (map[string]*SchemeDefinition, error) {
 			return err
 		}
 		if d.IsDir() {
+			// Directories named with a leading underscore (e.g. _vectors)
+			// hold tooling data, never scheme definitions.
+			return nil
+		}
+		if isIgnoredDataPath(path) {
 			return nil
 		}
 		base := filepath.Base(path)
-		if filepath.Ext(path) != ".json" || len(base) < 3 || base[0] != 'v' {
+		if filepath.Ext(path) != ".json" || !isVersionFileName(base) {
 			return nil
 		}
 		data, err := fs.ReadFile(fsys, path)
@@ -63,8 +88,11 @@ func LoadFromDir(root string) (map[string]*SchemeDefinition, error) {
 		if info.IsDir() {
 			return nil
 		}
+		if isIgnoredDataPath(path) {
+			return nil
+		}
 		base := filepath.Base(path)
-		if filepath.Ext(path) != ".json" || len(base) < 3 || base[0] != 'v' {
+		if filepath.Ext(path) != ".json" || !isVersionFileName(base) {
 			return nil
 		}
 		def, err := LoadScheme(path)
