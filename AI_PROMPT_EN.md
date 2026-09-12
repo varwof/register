@@ -74,7 +74,7 @@ Output a **strict JSON array**, each element being:
 
 ```json
 {
-  "scheme_id": "varwof/core",
+  "scheme_id": "varwof/core-v1",
   "capability": "cert:issue",
   "parameters": {
     "max_validity_days": 90
@@ -127,9 +127,9 @@ Minimal output:
 
 ```json
 [
-  {"scheme_id": "varwof/core", "capability": "cert:issue", "parameters": {"max_validity_days": 365}, "rationale": "Production HTTPS certificate, one-year validity"},
-  {"scheme_id": "varwof/core", "capability": "ca:list", "rationale": "Select the target CA for issuance"},
-  {"scheme_id": "varwof/core", "capability": "ca:info", "rationale": "Confirm CA availability status"}
+  {"scheme_id": "varwof/core-v1", "capability": "cert:issue", "parameters": {"max_validity_days": 365}, "rationale": "Production HTTPS certificate, one-year validity"},
+  {"scheme_id": "varwof/core-v1", "capability": "ca:list", "rationale": "Select the target CA for issuance"},
+  {"scheme_id": "varwof/core-v1", "capability": "ca:info", "rationale": "Confirm CA availability status"}
 ]
 ```
 

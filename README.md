@@ -31,7 +31,7 @@ go run ./cmd/gen-authz -list $CAPABILITY_DIR/varwof/core/v1.json
 go run ./cmd/gen-authz -out /tmp/authz.json $CAPABILITY_DIR/varwof/core/v1.json
 
 # Validate / search capabilities
-go run ./demo -data $CAPABILITY_DIR validate varwof/core:cert:issue
+go run ./demo -data $CAPABILITY_DIR validate varwof/core-v1:cert:issue
 go run ./demo -data $CAPABILITY_DIR search issue
 ```
 

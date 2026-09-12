@@ -54,7 +54,7 @@ go run ./demo -data $CAPABILITY_DIR get oracle/mysql
 go run ./demo -data $CAPABILITY_DIR validate oracle/mysql:query:users
 
 # 批量验证
-go run ./demo -data $CAPABILITY_DIR check oracle/mysql:query:users varwof/core:cert:issue
+go run ./demo -data $CAPABILITY_DIR check oracle/mysql:query:users varwof/core-v1:cert:issue
 
 # 搜索
 go run ./demo -data $CAPABILITY_DIR search query
@@ -87,8 +87,8 @@ go run ./demo -data $CAPABILITY_DIR search query
 ```bash
 # 验证签名
 openssl smime -verify \
-  -in ../capability/data/varwof/core/v1.json.p7s \
-  -content ../capability/data/varwof/core/v1.json \
+  -in ../capability/data/varwof/core-v1/v1.json.p7s \
+  -content ../capability/data/varwof/core-v1/v1.json \
   -CAfile pki/register-sub-ca.pem
 ```
 

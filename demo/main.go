@@ -26,7 +26,7 @@ func main() {
 		fmt.Println("Examples:")
 		fmt.Println("  capability-demo -data ../capability/data get oracle/mysql")
 		fmt.Println("  capability-demo -data ../capability/data validate oracle/mysql:query:users")
-		fmt.Println("  capability-demo -data ../capability/data check oracle/mysql:query:users varwof/core:cert:issue")
+		fmt.Println("  capability-demo -data ../capability/data check oracle/mysql:query:users varwof/core-v1:cert:issue")
 		fmt.Println("  capability-demo -data ../capability/data search query")
 	}
 

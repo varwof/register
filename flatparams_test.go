@@ -26,7 +26,7 @@ func TestFlatParamValueValidation(t *testing.T) {
 	}
 	for _, c := range cases {
 		results := reg.ValidateClaims([]CapabilityClaim{
-			{SchemeID: "varwof/core", Capability: c.cap, Parameters: c.par},
+			{SchemeID: "varwof/core-v1", Capability: c.cap, Parameters: c.par},
 		})
 		got := len(results) == 1 && results[0].Valid
 		if got != c.ok {
@@ -68,14 +68,14 @@ func TestRequiredParamMissing(t *testing.T) {
 func TestSchemeVersionMismatch(t *testing.T) {
 	reg := testRegistry(t)
 	res := reg.ValidateClaims([]CapabilityClaim{
-		{SchemeID: "varwof/core", Capability: "ca:list", SchemeVersion: "9.9.9"},
+		{SchemeID: "varwof/core-v1", Capability: "ca:list", SchemeVersion: "9.9.9"},
 	})
 	if len(res) != 1 || res[0].Valid {
 		t.Fatalf("version mismatch must be rejected: %+v", res)
 	}
 	// Matching version passes.
 	res = reg.ValidateClaims([]CapabilityClaim{
-		{SchemeID: "varwof/core", Capability: "ca:list", SchemeVersion: "1.0.0"},
+		{SchemeID: "varwof/core-v1", Capability: "ca:list", SchemeVersion: "1.0.0"},
 	})
 	if len(res) != 1 || !res[0].Valid {
 		t.Fatalf("matching version must pass: %+v", res)

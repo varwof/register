@@ -13,7 +13,7 @@ func testRegistry(t *testing.T) *Registry {
 	t.Helper()
 	reg := NewRegistry()
 	reg.Register(&SchemeDefinition{
-		SchemeID: "varwof/core",
+		SchemeID: "varwof/core-v1",
 		Name:     "core",
 		Version:  "1.0.0",
 		Vendor:   "varwof",
@@ -40,8 +40,8 @@ func testRegistry(t *testing.T) *Registry {
 func TestValidateClaimsValid(t *testing.T) {
 	reg := testRegistry(t)
 	claims := []CapabilityClaim{
-		{SchemeID: "varwof/core", Capability: "cert:issue", Parameters: map[string]any{"max_validity_days": 90}},
-		{SchemeID: "varwof/core", Capability: "ca:list"},
+		{SchemeID: "varwof/core-v1", Capability: "cert:issue", Parameters: map[string]any{"max_validity_days": 90}},
+		{SchemeID: "varwof/core-v1", Capability: "ca:list"},
 	}
 	results := reg.ValidateClaims(claims)
 	if len(results) != 2 {
@@ -67,7 +67,7 @@ func TestValidateClaimsUnknownScheme(t *testing.T) {
 
 func TestValidateClaimsUnknownCapability(t *testing.T) {
 	reg := testRegistry(t)
-	results := reg.ValidateClaims([]CapabilityClaim{{SchemeID: "varwof/core", Capability: "no:such"}})
+	results := reg.ValidateClaims([]CapabilityClaim{{SchemeID: "varwof/core-v1", Capability: "no:such"}})
 	if len(results) != 1 || results[0].Valid {
 		t.Fatalf("expected invalid result, got %+v", results)
 	}
@@ -79,7 +79,7 @@ func TestValidateClaimsUnknownCapability(t *testing.T) {
 func TestValidateClaimsUnknownParam(t *testing.T) {
 	reg := testRegistry(t)
 	results := reg.ValidateClaims([]CapabilityClaim{
-		{SchemeID: "varwof/core", Capability: "cert:issue", Parameters: map[string]any{"nonexistent": true}},
+		{SchemeID: "varwof/core-v1", Capability: "cert:issue", Parameters: map[string]any{"nonexistent": true}},
 	})
 	if len(results) != 1 || results[0].Valid {
 		t.Fatalf("expected invalid result, got %+v", results)
@@ -92,8 +92,8 @@ func TestValidateClaimsUnknownParam(t *testing.T) {
 func TestCheckMinimal_Redundant(t *testing.T) {
 	reg := testRegistry(t)
 	claims := []CapabilityClaim{
-		{SchemeID: "varwof/core", Capability: "ca:*"},
-		{SchemeID: "varwof/core", Capability: "ca:list"}, // 被 ca:* 覆盖 → 冗余
+		{SchemeID: "varwof/core-v1", Capability: "ca:*"},
+		{SchemeID: "varwof/core-v1", Capability: "ca:list"}, // 被 ca:* 覆盖 → 冗余
 	}
 	rep := reg.CheckMinimalCapabilitySet(claims, nil)
 	if len(rep.InvalidClaims) != 0 {
@@ -113,8 +113,8 @@ func TestCheckMinimal_Redundant(t *testing.T) {
 func TestCheckMinimal_NoRedundant(t *testing.T) {
 	reg := testRegistry(t)
 	claims := []CapabilityClaim{
-		{SchemeID: "varwof/core", Capability: "ca:list"},
-		{SchemeID: "varwof/core", Capability: "cert:issue"},
+		{SchemeID: "varwof/core-v1", Capability: "ca:list"},
+		{SchemeID: "varwof/core-v1", Capability: "cert:issue"},
 	}
 	rep := reg.CheckMinimalCapabilitySet(claims, nil)
 	if len(rep.InvalidClaims) != 0 || len(rep.RedundantClaims) != 0 {
@@ -128,12 +128,12 @@ func TestCheckMinimal_NoRedundant(t *testing.T) {
 func TestCheckMinimal_MissingGranted(t *testing.T) {
 	reg := testRegistry(t)
 	claims := []CapabilityClaim{
-		{SchemeID: "varwof/core", Capability: "cert:issue"},
-		{SchemeID: "varwof/core", Capability: "key:recover"},
+		{SchemeID: "varwof/core-v1", Capability: "cert:issue"},
+		{SchemeID: "varwof/core-v1", Capability: "key:recover"},
 	}
 	rep := reg.CheckMinimalCapabilitySet(claims, []string{"cert:issue", "ca:list"})
-	if len(rep.MissingGranted) != 1 || rep.MissingGranted[0] != "varwof/core:key:recover" {
-		t.Fatalf("MissingGranted = %v, want [varwof/core:key:recover]", rep.MissingGranted)
+	if len(rep.MissingGranted) != 1 || rep.MissingGranted[0] != "varwof/core-v1:key:recover" {
+		t.Fatalf("MissingGranted = %v, want [varwof/core-v1:key:recover]", rep.MissingGranted)
 	}
 	if rep.IsMinimal {
 		t.Error("should not be minimal (missing granted)")
@@ -142,8 +142,8 @@ func TestCheckMinimal_MissingGranted(t *testing.T) {
 
 func TestParseCapabilityClaims(t *testing.T) {
 	data := []byte(`[
-		{"scheme_id":"varwof/core","capability":"cert:issue","parameters":{"max_validity_days":90},"rationale":"x"},
-		{"scheme_id":"varwof/gateway","capability":"proxy:http"}
+		{"scheme_id":"varwof/core-v1","capability":"cert:issue","parameters":{"max_validity_days":90},"rationale":"x"},
+		{"scheme_id":"varwof/gateway-v1","capability":"proxy:http"}
 	]`)
 	claims, err := ParseCapabilityClaims(data)
 	if err != nil {
@@ -152,13 +152,13 @@ func TestParseCapabilityClaims(t *testing.T) {
 	if len(claims) != 2 {
 		t.Fatalf("claims = %d, want 2", len(claims))
 	}
-	if claims[0].Capability != "cert:issue" || claims[1].SchemeID != "varwof/gateway" {
+	if claims[0].Capability != "cert:issue" || claims[1].SchemeID != "varwof/gateway-v1" {
 		t.Errorf("unexpected parse: %+v", claims)
 	}
 }
 
 func TestParseCapabilityClaimsMissingField(t *testing.T) {
-	data := []byte(`[{"scheme_id":"varwof/core"}]`)
+	data := []byte(`[{"scheme_id":"varwof/core-v1"}]`)
 	_, err := ParseCapabilityClaims(data)
 	if err == nil {
 		t.Fatal("expected error for missing capability field")
@@ -167,7 +167,7 @@ func TestParseCapabilityClaimsMissingField(t *testing.T) {
 
 func TestGenDocsContent(t *testing.T) {
 	reg := testRegistry(t)
-	def, _ := reg.Get("varwof/core")
+	def, _ := reg.Get("varwof/core-v1")
 	md, err := GenDocs(def)
 	if err != nil {
 		t.Fatalf("GenDocs: %v", err)
@@ -176,7 +176,7 @@ func TestGenDocsContent(t *testing.T) {
 	// （夹具中为 ca:info），因此这里断言派生结果而非固定的 cert:issue。
 	for _, want := range []string{
 		"权限说明", "能力目录", "能力详细语义", "通配符与匹配规则", "最小权限生成指南",
-		"`varwof/core:ca:info`", "**何时需要**", "**何时不应授予**", "**示例**",
+		"`varwof/core-v1:ca:info`", "**何时需要**", "**何时不应授予**", "**示例**",
 	} {
 		if !strings.Contains(md, want) {
 			t.Errorf("GenDocs missing %q", want)

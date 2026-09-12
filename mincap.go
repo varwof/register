@@ -44,7 +44,7 @@ type MinSetReport struct {
 }
 
 // ParseCapabilityClaims parses a list of capability claims from JSON data.
-// Expected structure: [{"scheme_id":"varwof/core","capability":"cert:issue",...}]
+// Expected structure: [{"scheme_id":"varwof/core-v1","capability":"cert:issue",...}]
 func ParseCapabilityClaims(data []byte) ([]CapabilityClaim, error) {
 	var claims []CapabilityClaim
 	if err := json.Unmarshal(data, &claims); err != nil {

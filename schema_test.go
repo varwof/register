@@ -16,7 +16,7 @@ func TestParseSchemeID(t *testing.T) {
 		wantProduct string
 		wantOK      bool
 	}{
-		{"varwof/core", "varwof", "core", true},
+		{"varwof/core-v1", "varwof", "core-v1", true},
 		{"oracle/mysql", "oracle", "mysql", true},
 		{"x-acme/order", "x-acme", "order", true},
 		{"a/b", "a", "b", true},
@@ -41,15 +41,15 @@ func TestParseSchemeID(t *testing.T) {
 }
 
 func TestFormatSchemeID(t *testing.T) {
-	got := FormatSchemeID("varwof", "core")
-	if got != "varwof/core" {
-		t.Errorf("FormatSchemeID(\"varwof\",\"core\") = %q, want %q", got, "varwof/core")
+	got := FormatSchemeID("varwof", "core-v1")
+	if got != "varwof/core-v1" {
+		t.Errorf("FormatSchemeID(\"varwof\",\"core-v1\") = %q, want %q", got, "varwof/core-v1")
 	}
 }
 
 func TestValidateSchemeID(t *testing.T) {
 	valid := []string{
-		"varwof/core",
+		"varwof/core-v1",
 		"oracle/mysql",
 		"x-acme/order",
 		"a1/b2",
@@ -86,12 +86,12 @@ func TestParseCapability(t *testing.T) {
 		wantCapID  string
 		wantOK     bool
 	}{
-		{"varwof/core:cert:issue", "varwof/core", "cert:issue", true},
+		{"varwof/core-v1:cert:issue", "varwof/core-v1", "cert:issue", true},
 		{"oracle/mysql:query:users", "oracle/mysql", "query:users", true},
-		{"varwof/core:simple", "varwof/core", "simple", true},
+		{"varwof/core-v1:simple", "varwof/core-v1", "simple", true},
 		{"no-slash:cap", "", "", false},
 		{"no-colon", "", "", false},
-		{"varwof/core:", "varwof/core", "", true},
+		{"varwof/core-v1:", "varwof/core-v1", "", true},
 		{"x/ac:a:b:c", "x/ac", "a:b:c", true},
 	}
 	for _, tt := range tests {
@@ -113,9 +113,9 @@ func TestParseCapability(t *testing.T) {
 }
 
 func TestFormatCapability(t *testing.T) {
-	got := FormatCapability("varwof/core", "cert:issue")
-	if got != "varwof/core:cert:issue" {
-		t.Errorf("FormatCapability = %q, want %q", got, "varwof/core:cert:issue")
+	got := FormatCapability("varwof/core-v1", "cert:issue")
+	if got != "varwof/core-v1:cert:issue" {
+		t.Errorf("FormatCapability = %q, want %q", got, "varwof/core-v1:cert:issue")
 	}
 }
 

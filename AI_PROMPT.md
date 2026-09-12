@@ -78,7 +78,7 @@
 
 ```json
 {
-  "scheme_id": "varwof/core",
+  "scheme_id": "varwof/core-v1",
   "capability": "cert:issue",
   "parameters": {
     "max_validity_days": 90
@@ -131,9 +131,9 @@ go run ./cmd/gen-capability claims.json
 
 ```json
 [
-  {"scheme_id": "varwof/core", "capability": "cert:issue", "parameters": {"max_validity_days": 365}, "rationale": "生产 HTTPS 证书，一年期"},
-  {"scheme_id": "varwof/core", "capability": "ca:list", "rationale": "选择签发目标 CA"},
-  {"scheme_id": "varwof/core", "capability": "ca:info", "rationale": "确认 CA 可用状态"}
+  {"scheme_id": "varwof/core-v1", "capability": "cert:issue", "parameters": {"max_validity_days": 365}, "rationale": "生产 HTTPS 证书，一年期"},
+  {"scheme_id": "varwof/core-v1", "capability": "ca:list", "rationale": "选择签发目标 CA"},
+  {"scheme_id": "varwof/core-v1", "capability": "ca:info", "rationale": "确认 CA 可用状态"}
 ]
 ```
 

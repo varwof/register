@@ -86,13 +86,13 @@ func TestHasCapability(t *testing.T) {
 
 func TestValidateCapability(t *testing.T) {
 	r := NewRegistry()
-	r.Register(testDef("varwof/core", "cert:issue", "cert:revoke"))
+	r.Register(testDef("varwof/core-v1", "cert:issue", "cert:revoke"))
 
-	def, cap, err := r.ValidateCapability("varwof/core:cert:issue")
+	def, cap, err := r.ValidateCapability("varwof/core-v1:cert:issue")
 	if err != nil {
 		t.Fatalf("ValidateCapability valid: %v", err)
 	}
-	if def.SchemeID != "varwof/core" {
+	if def.SchemeID != "varwof/core-v1" {
 		t.Errorf("scheme = %q", def.SchemeID)
 	}
 	if cap.ID != "cert:issue" {
@@ -112,7 +112,7 @@ func TestValidateCapability(t *testing.T) {
 	}
 
 	// unknown capability
-	_, _, err = r.ValidateCapability("varwof/core:nonexistent")
+	_, _, err = r.ValidateCapability("varwof/core-v1:nonexistent")
 	if err == nil {
 		t.Error("ValidateCapability unknown cap: expected error")
 	}

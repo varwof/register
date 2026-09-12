@@ -23,7 +23,7 @@ export CAPABILITY_DIR=../capability/data
 
 go run ./cmd/gen-authz -list $CAPABILITY_DIR/varwof/core/v1.json
 go run ./cmd/gen-authz -out /tmp/authz.json $CAPABILITY_DIR/varwof/core/v1.json
-go run ./demo -data $CAPABILITY_DIR validate varwof/core:cert:issue
+go run ./demo -data $CAPABILITY_DIR validate varwof/core-v1:cert:issue
 ```
 
 ## 安装

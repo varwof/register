@@ -75,22 +75,22 @@ if len(denied) > 0 {
 ```bash
 # 产品方签署 capability.json
 openssl pkcs7 -sign \
-  -in ../capability/data/varwof/core/v1.json \
-  -out ../capability/data/varwof/core/v1.json.p7s \
+  -in ../capability/data/varwof/core-v1/v1.json \
+  -out ../capability/data/varwof/core-v1/v1.json.p7s \
   -signer product.pem \
   -certfile chain.pem \
 
 # 验证签名
 openssl smime -verify \
-  -in ../capability/data/varwof/core/v1.json.p7s \
-  -content ../capability/data/varwof/core/v1.json \
+  -in ../capability/data/varwof/core-v1/v1.json.p7s \
+  -content ../capability/data/varwof/core-v1/v1.json \
   -CAfile pki/root-ca.pem
 ```
 
 ```go
 // Go 验证
 trustRoots, _ := register.LoadTrustRoots("pki/")
-err := register.VerifyCapabilityPKCS7("../capability/data/varwof/core/v1.json", trustRoots)
+err := register.VerifyCapabilityPKCS7("../capability/data/varwof/core-v1/v1.json", trustRoots)
 if err != nil {
     fmt.Println("签名验证失败:", err)
 }

@@ -66,7 +66,7 @@ func TestGenAuthzBasic(t *testing.T) {
 		"agent": {DisplayName: "Agent", OUs: nil,
 			Grants: []string{"gateway:*"}},
 	}
-	p := writeTestScheme(t, dir, "varwof/core", roles)
+	p := writeTestScheme(t, dir, "varwof/core-v1", roles)
 	// 从第二个方案（gateway 命名空间角色）聚合 gateway: 前缀
 	gwRoles := map[string]RoleDef{
 		"gateway:admin": {DisplayName: "网关管理员", OUs: []string{"gateway:admin"},
@@ -77,7 +77,7 @@ func TestGenAuthzBasic(t *testing.T) {
 		{ID: "proxy:tcp", Description: "TCP 代理"},
 		{ID: "admin:config", Description: "配置管理"},
 	}
-	gp := writeTestSchemeCustom(t, dir, "varwof/gateway", gwCaps, gwRoles)
+	gp := writeTestSchemeCustom(t, dir, "varwof/gateway-v1", gwCaps, gwRoles)
 
 	doc, err := GenAuthz(GenAuthzConfig{SchemePaths: []string{p, gp}, Version: "v2"})
 	if err != nil {
@@ -104,7 +104,7 @@ func TestGenAuthzBasic(t *testing.T) {
 		t.Errorf("ns grant = %q, want gateway:*", ns.Grants[0])
 	}
 	// 参数默认值
-	params := doc.CapabilityParameters["varwof/core:cert:issue"]
+	params := doc.CapabilityParameters["varwof/core-v1:cert:issue"]
 	if params == nil {
 		t.Fatalf("missing capability_parameters for cert:issue")
 	}
@@ -118,7 +118,7 @@ func TestGenAuthzRoleCoverageError(t *testing.T) {
 	roles := map[string]RoleDef{
 		"bad": {Grants: []string{"ca:list", "no:such-capability"}},
 	}
-	p := writeTestScheme(t, dir, "varwof/core", roles)
+	p := writeTestScheme(t, dir, "varwof/core-v1", roles)
 	_, err := GenAuthz(GenAuthzConfig{SchemePaths: []string{p}})
 	if err == nil {
 		t.Fatal("expected error for uncovered grant, got nil")
@@ -130,7 +130,7 @@ func TestGenAuthzCrossSchemeWildcardOK(t *testing.T) {
 	roles := map[string]RoleDef{
 		"agent": {Grants: []string{"gateway:*"}},
 	}
-	p := writeTestScheme(t, dir, "varwof/core", roles)
+	p := writeTestScheme(t, dir, "varwof/core-v1", roles)
 	doc, err := GenAuthz(GenAuthzConfig{SchemePaths: []string{p}})
 	if err != nil {
 		t.Fatalf("GenAuthz cross-scheme wildcard: %v", err)
@@ -146,7 +146,7 @@ func TestGenAuthzToFile(t *testing.T) {
 		"admin": {DisplayName: "管理员", OUs: []string{"admin"},
 			Grants: []string{"ca:list", "ca:create"}},
 	}
-	p := writeTestScheme(t, dir, "varwof/core", roles)
+	p := writeTestScheme(t, dir, "varwof/core-v1", roles)
 	out := filepath.Join(dir, "out", "authz.json")
 	if err := os.MkdirAll(filepath.Dir(out), 0o755); err != nil {
 		t.Fatal(err)

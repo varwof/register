@@ -9,11 +9,11 @@ import (
 
 func TestValidateCapabilitiesValid(t *testing.T) {
 	r := NewRegistry()
-	r.Register(testDef("varwof/core", "cert:issue", "cert:revoke", "crl:read"))
+	r.Register(testDef("varwof/core-v1", "cert:issue", "cert:revoke", "crl:read"))
 
 	result := r.ValidateCapabilities([]string{
-		"varwof/core:cert:issue",
-		"varwof/core:cert:revoke",
+		"varwof/core-v1:cert:issue",
+		"varwof/core-v1:cert:revoke",
 	})
 	if !result.Valid {
 		t.Errorf("expected valid, got errors: %v", result.Errors)
@@ -25,13 +25,13 @@ func TestValidateCapabilitiesValid(t *testing.T) {
 
 func TestValidateCapabilitiesErrors(t *testing.T) {
 	r := NewRegistry()
-	r.Register(testDef("varwof/core", "cert:issue"))
+	r.Register(testDef("varwof/core-v1", "cert:issue"))
 
 	result := r.ValidateCapabilities([]string{
-		"varwof/core:cert:issue",
+		"varwof/core-v1:cert:issue",
 		"bad-format",
 		"no/scheme:cap",
-		"varwof/core:nonexistent",
+		"varwof/core-v1:nonexistent",
 	})
 	if result.Valid {
 		t.Error("expected invalid")
@@ -58,21 +58,21 @@ func TestValidateCapabilitiesEmpty(t *testing.T) {
 func TestCheckSubset(t *testing.T) {
 	r := NewRegistry()
 
-	allowed := []string{"varwof/core:cert:issue", "varwof/core:cert:revoke"}
-	declared := []string{"varwof/core:cert:issue"}
+	allowed := []string{"varwof/core-v1:cert:issue", "varwof/core-v1:cert:revoke"}
+	declared := []string{"varwof/core-v1:cert:issue"}
 	denied := r.CheckSubset(declared, allowed)
 	if len(denied) != 0 {
 		t.Errorf("unexpected denied: %v", denied)
 	}
 
-	declared2 := []string{"varwof/core:cert:issue", "oracle/mysql:query:users"}
+	declared2 := []string{"varwof/core-v1:cert:issue", "oracle/mysql:query:users"}
 	denied2 := r.CheckSubset(declared2, allowed)
 	if len(denied2) != 1 || denied2[0] != "oracle/mysql:query:users" {
 		t.Errorf("expected [oracle/mysql:query:users], got %v", denied2)
 	}
 
 	// case insensitive
-	denied3 := r.CheckSubset([]string{"VARWOF/CORE:CERT:ISSUE"}, allowed)
+	denied3 := r.CheckSubset([]string{"VARWOF/CORE-V1:CERT:ISSUE"}, allowed)
 	if len(denied3) != 0 {
 		t.Errorf("case insensitive check failed: denied = %v", denied3)
 	}
@@ -105,13 +105,13 @@ func TestCheckIntersection(t *testing.T) {
 
 func TestFilterByScheme(t *testing.T) {
 	caps := []string{
-		"varwof/core:cert:issue",
-		"varwof/core:crl:read",
+		"varwof/core-v1:cert:issue",
+		"varwof/core-v1:crl:read",
 		"oracle/mysql:query:users",
-		"varwof/core:cert:revoke",
+		"varwof/core-v1:cert:revoke",
 	}
 
-	filtered := FilterByScheme(caps, "varwof/core")
+	filtered := FilterByScheme(caps, "varwof/core-v1")
 	if len(filtered) != 3 {
 		t.Errorf("FilterByScheme returned %d, want 3", len(filtered))
 	}
@@ -125,10 +125,10 @@ func TestFilterByScheme(t *testing.T) {
 
 func TestDeduplicate(t *testing.T) {
 	input := []string{
-		"varwof/core:cert:issue",
-		"VARWOF/CORE:CERT:ISSUE",
+		"varwof/core-v1:cert:issue",
+		"VARWOF/CORE-V1:CERT:ISSUE",
 		"oracle/mysql:query",
-		"varwof/core:cert:issue",
+		"varwof/core-v1:cert:issue",
 	}
 	result := Deduplicate(input)
 	if len(result) != 2 {

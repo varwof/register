@@ -113,7 +113,7 @@ func TestLoadFromBothEmptyDirError(t *testing.T) {
 func TestLoadFromBothDiskOverride(t *testing.T) {
 	dir := t.TempDir()
 	overrideJSON := `{
-		"scheme_id": "varwof/core",
+		"scheme_id": "varwof/core-v1",
 		"name": "Override Core",
 		"version": "99.0.0",
 		"description": "disk override",
@@ -125,7 +125,7 @@ func TestLoadFromBothDiskOverride(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadFromBoth with override: %v", err)
 	}
-	def := schemes["varwof/core"]
+	def := schemes["varwof/core-v1"]
 	if def == nil {
 		t.Fatal("varwof/core not found")
 	}
@@ -143,14 +143,14 @@ func TestNewRegistryWithEmbeddedRemoved(t *testing.T) {
 
 func TestNewRegistryFromDisk(t *testing.T) {
 	dir := t.TempDir()
-	writeSchemeFile(t, dir, "varwof/core", "varwof/core", "Core", "1.0.0")
+	writeSchemeFile(t, dir, "varwof/core-v1", "varwof/core-v1", "Core", "1.0.0")
 	writeSchemeFile(t, dir, "oracle/mysql", "oracle/mysql", "MySQL", "1.0.0")
 
 	reg, err := NewRegistryFromDisk(dir)
 	if err != nil {
 		t.Fatalf("NewRegistryFromDisk: %v", err)
 	}
-	if !reg.Has("varwof/core") {
+	if !reg.Has("varwof/core-v1") {
 		t.Error("missing varwof/core")
 	}
 	if !reg.Has("oracle/mysql") {
