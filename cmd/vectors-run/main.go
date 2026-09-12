@@ -23,8 +23,12 @@ type Vector struct {
 	Others           []semantics.Grant    `json:"others"`
 	Multi            bool                 `json:"multi,omitempty"` // rev CLC-1.3: §9.3 grant-SET aggregation
 	RawParams        string               `json:"raw_params,omitempty"`
-	Expect           Expectation          `json:"expect"`
-	Derivation       string               `json:"derivation"`
+	// Principal / Requested are the two constraint-string sets for kind=subset
+	// (06-delegation-auth constraint narrowing).
+	Principal  []string    `json:"principal,omitempty"`
+	Requested  []string    `json:"requested,omitempty"`
+	Expect     Expectation `json:"expect"`
+	Derivation string      `json:"derivation"`
 }
 
 type Expectation struct {
@@ -180,6 +184,22 @@ func runVector(v Vector) Result {
 			r.ReasonGot = canonicalReason(err.Error())
 		} else {
 			r.Got = "valid"
+		}
+		verdictOK = (r.Got == v.Expect.Verdict)
+
+	case "subset":
+		// 06-delegation-auth constraint narrowing: the agent's requested
+		// constraint set must lie inside the principal's boundary.  Errors
+		// (malformed / unknown / fail-closed) report "error", never "allow".
+		r.Expect = v.Expect.Verdict
+		ok, err := semantics.SubsetConstraints(v.Principal, v.Requested)
+		if err != nil {
+			r.Got = "error"
+			r.ReasonGot = canonicalReason(err.Error())
+		} else if ok {
+			r.Got = "allow"
+		} else {
+			r.Got = "deny"
 		}
 		verdictOK = (r.Got == v.Expect.Verdict)
 
