@@ -33,7 +33,7 @@ jobs:
 
       - name: CLC-v1 vectors (verdict + reason)
         env:
-          CLC_VECTORS: ../capability/data/_vectors/clc-v1/vectors.json
+          CLC_VECTORS: ${{ github.workspace }}/../capability/data/_vectors/clc-v1/vectors.json
         run: go run ./cmd/vectors-run/
 
       - name: P11 property (composition narrows only)
@@ -42,5 +42,7 @@ jobs:
         # cached run would report the previous run's counters (it did: 281/274
         # vs the real 299/290).
         env:
-          CLC_PROPERTY_CASES: ../capability/data/_vectors/clc-v1/property-cases.json
+          # Absolute path: `go test` runs the test binary with CWD = ./semantics,
+          # so a repo-root-relative path silently skips this gate.
+          CLC_PROPERTY_CASES: ${{ github.workspace }}/../capability/data/_vectors/clc-v1/property-cases.json
         run: go test -count=1 ./semantics/ -run TestIntersectionProperty -v
