@@ -2,7 +2,7 @@
 
 > **状态：探索草稿，非规范**
 > 日期：2026-08-23
-> 关联：register 项目、AIC-JWT（draft-wei-aic-jwt-00）
+> 关联：register 项目、AIC-JWT（draft-wei-aic-jwt-01）
 > 目的：在定稿前对齐核心设计决策；本文档不承诺任何字段/文件为最终形式。
 
 ---
@@ -450,7 +450,7 @@ Cloudflare Pages 静态分发 + PKCS#7 验签消费，实现全球开放能力�
   gateway phase-one fail-closed）。
 - register 目前为探索前原始状态（本文档不伴随任何代码改动）。
 - 与 AIC-JWT 草案的关系：本方案的 capability 参数契约对应草案 §6 能力容器
-  的 `params`；约束类型对应 §7；命名空间注册对应 §15 的外部能力方案注册表。
+  的 `params`；约束类型对应 §7；命名空间注册在草案中尚未定义注册表（§15 为 IANA Considerations，无该表）—— 留待后续修订。
 
 ## 附注：时间窗属于授权约束，不属于执行条件
 

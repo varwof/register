@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://varwof.com/register/schemas/rule.schema.json",
+  "$id": "https://github.com/varwof/register/blob/main/demo/rule-exec/rule.schema.json",
   "title": "AIC Rule File",
   "type": "object",
   "required": [

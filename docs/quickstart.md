@@ -79,7 +79,6 @@ openssl pkcs7 -sign \
   -out ../capability/data/varwof/core/v1.json.p7s \
   -signer product.pem \
   -certfile chain.pem \
-  -nodetach
 
 # 验证签名
 openssl smime -verify \

@@ -7,7 +7,7 @@
   "product": "database-v1",
   "author": "varwof (open ecosystem)",
   "license": "Apache-2.0",
-  "homepage": "https://varwof.com/register/docs/database-v1",
+  "homepage": "https://github.com/varwof/register",
   "capabilities": [
     {
       "id": "query:SELECT",
