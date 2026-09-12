@@ -21,6 +21,7 @@ type Vector struct {
 	Grant            *semantics.Grant     `json:"grant"`
 	Request          *semantics.Operation `json:"request"`
 	Others           []semantics.Grant    `json:"others"`
+	Multi            bool                 `json:"multi,omitempty"` // rev CLC-1.3: §9.3 grant-SET aggregation
 	RawParams        string               `json:"raw_params,omitempty"`
 	Expect           Expectation          `json:"expect"`
 	Derivation       string               `json:"derivation"`
@@ -29,6 +30,9 @@ type Vector struct {
 type Expectation struct {
 	Verdict string `json:"verdict"`
 	Reason  string `json:"reason,omitempty"`
+	// Unresolved asserts the decision's §8.4 residual-obligation list
+	// (rev CLC-1.2).  nil = not asserted; [] = asserted, must be empty.
+	Unresolved []string `json:"unresolved,omitempty"`
 	// Result assertions for kind=intersect (§7).  They were declared by the
 	// corpus from the start but never read, so the merged params and
 	// constraints were unasserted until now.
@@ -230,6 +234,27 @@ func runVector(v Vector) Result {
 			op = *v.Request
 		}
 
+		// Multi-grant §9.3 aggregation (rev CLC-1.3): grant + others form the
+		// authorization grant SET; any-allowing grant authorizes (union), and
+		// residual obligations union across covering-and-allowing grants.
+		if v.Multi {
+			grants := []semantics.Grant{grant}
+			grants = append(grants, v.Others...)
+			result := semantics.AuthorizeSet(grants, op)
+			r.Got = result.Verdict
+			r.ReasonGot = canonicalReason(result.Reason)
+			verdictOK = (r.Got == v.Expect.Verdict)
+			if v.Expect.Unresolved != nil {
+				want := append([]string(nil), v.Expect.Unresolved...)
+				sort.Strings(want)
+				if strings.Join(want, "\x00") != strings.Join(result.Unresolved, "\x00") {
+					r.Note = fmt.Sprintf("unresolved want=%v got=%v", want, result.Unresolved)
+					verdictOK = false
+				}
+			}
+			break
+		}
+
 		// Combined vectors: intersect first; capture the intersection reason.
 		if len(v.Others) > 0 {
 			grants := append([]semantics.Grant{grant}, v.Others...)
@@ -247,6 +272,16 @@ func runVector(v Vector) Result {
 		r.Got = result.Verdict
 		r.ReasonGot = canonicalReason(result.Reason)
 		verdictOK = (r.Got == v.Expect.Verdict)
+		// §8.4 residual obligations: asserted when the vector declares them
+		// (rev CLC-1.2).  Both sides are sorted+deduped before comparison.
+		if v.Expect.Unresolved != nil {
+			want := append([]string(nil), v.Expect.Unresolved...)
+			sort.Strings(want)
+			if strings.Join(want, "\x00") != strings.Join(result.Unresolved, "\x00") {
+				r.Note = fmt.Sprintf("unresolved want=%v got=%v", want, result.Unresolved)
+				verdictOK = false
+			}
+		}
 	}
 
 	// Pass requires BOTH verdict and (canonical) reason to match.

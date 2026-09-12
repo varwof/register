@@ -11,6 +11,7 @@ import (
 	"io"
 	"math"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -30,9 +31,25 @@ type Operation struct {
 
 // Decision is the output of the authorization function.
 type Decision struct {
-	Verdict string `json:"verdict"` // "allow" or "deny"
+	Verdict string `json:"verdict"` // "allow", "deny" or "allow_unresolved" (rev CLC-1.3)
 	Reason  string `json:"reason,omitempty"`
+	// Unresolved lists recognized-but-unevaluated constraints carried on an
+	// allow_unresolved verdict (§8.4 residual-obligation channel): non-empty
+	// means the consumer must evaluate/confirm each constraint before acting,
+	// else deny (AAC §6.6).  Empty on deny and on a fully-evaluated allow.
+	// Ordered deterministically (sorted, deduped).
+	Unresolved []string `json:"unresolved,omitempty"`
 }
+
+const (
+	VerdictAllow    = "allow"
+	VerdictDeny     = "deny"
+	VerdictAllowUR  = "allow_unresolved"
+	reservedScheme  = "varwof/constraint-v1"
+	reservedMaxRows = reservedScheme + ":max_rows"
+	reservedTimeWin = reservedScheme + ":time"
+	reservedNetCIDR = reservedScheme + ":network"
+)
 
 // MatchResult captures the result of an entailment check.
 type MatchResult struct {
@@ -44,6 +61,7 @@ var (
 	ErrUnsupportedWildcard = errors.New("unsupported_wildcard")
 	ErrInvalidCapabilityID = errors.New("invalid_capability_id")
 	ErrMissingCapabilityID = errors.New("missing_capability_id")
+	ErrInvalidConstraint   = errors.New("invalid_constraint")
 	ErrInvalidParamsNull   = errors.New("invalid_params_null")
 	ErrParamsMissing       = errors.New("params_missing")
 	ErrParamsUndeclared    = errors.New("undeclared_param")
@@ -98,11 +116,25 @@ func ValidateCapabilityID(id string) error {
 	if len(parts) < 2 {
 		return ErrInvalidCapabilityID
 	}
+	// §3 scheme grammar: vendor "/" product "-v" major (rev CLC-1.2).
+	// Wildcard detection above runs first (§3: wildcard precedes grammar).
+	if !capabilitySchemeRE.MatchString(parts[0]) {
+		return ErrInvalidCapabilityID
+	}
 	return nil
 }
 
-// ValidateGrantParams checks for null values in params (CLC-v1 §5.2).
+// capabilitySchemeRE matches the §3 scheme grammar:
+// scheme = vendor "/" product "-v" major (vendor/product are
+// ALPHA/DIGIT/"-").  See ValidateCapabilityID.
+var capabilitySchemeRE = regexp.MustCompile(`^[a-zA-Z0-9-]+/[a-zA-Z0-9-]+-v[0-9]+$`)
+
+// ValidateGrantParams checks for null values in params (CLC-v1 §5.2) and
+// applies the §6.2 step 4 caps to the decoded-object path (§6.2 step 6).
 func ValidateGrantParams(params map[string]any) error {
+	if err := validateObjectParams(params); err != nil {
+		return err
+	}
 	for k, v := range params {
 		if v == nil {
 			return fmt.Errorf("%w: %s", ErrInvalidParamsNull, k)
@@ -111,19 +143,63 @@ func ValidateGrantParams(params map[string]any) error {
 	return nil
 }
 
-// ValidateOperationParams checks for null values in operation params.
+// ValidateOperationParams checks for null values in operation params and
+// applies the §6.2 step 4 caps to the decoded-object path (§6.2 step 6).
 func ValidateOperationParams(params map[string]any) error {
+	if err := validateObjectParams(params); err != nil {
+		return err
+	}
 	for k, v := range params {
 		if v == nil {
 			return fmt.Errorf("%w: %s", ErrInvalidParamsNull, k)
 		}
 	}
 	return nil
+}
+
+// validateObjectParams applies the §6.2 step 4 size/depth caps to a decoded
+// (object-path) params object (rev CLC-1.2 §6.2 step 6): the depth cap is
+// measured on the decoded structure, the size cap on a canonical
+// (sorted-key, compact) serialization.  Byte-exactness against a specific
+// original raw text is guaranteed only for the raw path (ValidateRawParams);
+// both entry points MUST reject the caps.
+func validateObjectParams(params map[string]any) error {
+	if paramsDepth(params, 1) > maxParamsNesting {
+		return ErrInvalidParamsSize
+	}
+	if b, err := CanonicalJSON(params); err == nil && len(b) > maxParamsSerializedBytes {
+		return ErrInvalidParamsSize
+	}
+	return nil
+}
+
+// paramsDepth returns the nesting depth of a decoded params value, counting
+// objects and arrays with the params object as level 1 (§6.2 step 4).
+func paramsDepth(v any, depth int) int {
+	max := depth
+	switch t := v.(type) {
+	case map[string]any:
+		for _, c := range t {
+			if d := paramsDepth(c, depth+1); d > max {
+				max = d
+			}
+		}
+	case []any:
+		for _, c := range t {
+			if d := paramsDepth(c, depth+1); d > max {
+				max = d
+			}
+		}
+	}
+	return max
 }
 
 // CLCRevision is the language revision this implementation declares and
 // evaluates.  Compatible reading (§12.1): same major, minor ≤ ours.
-const CLCRevision = "CLC-1.1"
+// (rev CLC-1.3 · 2026-09-12: CLC-1.3 is additive — `allow_unresolved`
+// verdict + §9.3 identity/aggregation clarifications — so CLC-1.2/1.1
+// inputs still read fine.)
+const CLCRevision = "CLC-1.3"
 
 const (
 	// maxParamsSerializedBytes bounds the JCS-serialized params size
@@ -429,7 +505,8 @@ func namespaceOf(id string) string {
 // (params_missing) before op keys must be declared by the grant
 // (undeclared_param).
 func paramsSubset(opParams, grantParams map[string]any) (bool, string) {
-	if grantParams == nil {
+	if grantParams == nil || len(grantParams) == 0 {
+		// rev CLC-1.3: an absent OR empty params object is unconstrained (§9.3).
 		return true, ""
 	}
 	// §9.3 layer 5: explicit empty bound ([] or {}) on the grant side
@@ -616,8 +693,9 @@ func Entails(grant Grant, op Operation) MatchResult {
 		return MatchResult{Entails: false, Reason: reason}
 	}
 
-	// §5.3 step 3: grant params absent → true (unconstrained)
-	if grant.Params == nil {
+	// §5.3 step 3: grant params absent (or {} — rev CLC-1.3: the empty object
+	// is the same as absent, unconstrained) → true
+	if grant.Params == nil || len(grant.Params) == 0 {
 		return MatchResult{Entails: true}
 	}
 
@@ -769,14 +847,24 @@ func intersectValue(a, b any) (any, error) {
 		if !ok {
 			return nil, ErrNoOverlap
 		}
+		// Object values intersect per shared key, and only when the two key
+		// sets are identical (rev CLC-1.2): a result built from the shared
+		// keys would drop a key the other source constrains, so no such
+		// result is covered by every source — violating P11 (composition
+		// narrows only).  Differing key sets therefore deny no_overlap.
+		if len(av) != len(bv) {
+			return nil, ErrNoOverlap
+		}
 		result := make(map[string]any)
 		for k, avv := range av {
-			if bvv, ok := bv[k]; ok {
-				if v, err := intersectValue(avv, bvv); err != nil {
-					return nil, err
-				} else {
-					result[k] = v
-				}
+			bvv, ok := bv[k]
+			if !ok {
+				return nil, ErrNoOverlap
+			}
+			if v, err := intersectValue(avv, bvv); err != nil {
+				return nil, err
+			} else {
+				result[k] = v
 			}
 		}
 		if len(result) == 0 {
@@ -791,6 +879,9 @@ func intersectValue(a, b any) (any, error) {
 	}
 }
 
+// mergeConstraints unions constraints and returns them deterministically
+// (deduped + lexically sorted, rev CLC-1.2 §8.1: identical inputs yield an
+// identical constraint sequence across implementations).
 func mergeConstraints(a, b []string) []string {
 	set := make(map[string]bool)
 	for _, c := range a {
@@ -799,109 +890,422 @@ func mergeConstraints(a, b []string) []string {
 	for _, c := range b {
 		set[c] = true
 	}
-	var result []string
+	result := make([]string, 0, len(set))
 	for c := range set {
 		result = append(result, c)
 	}
+	sort.Strings(result)
 	return result
 }
 
-// Authorize evaluates the decision function per CLC-v1 §8.
+// sortedSet returns the deduped, lexically sorted form of src (used for the
+// decision's unresolved list, §8.4).
+func sortedSet(src []string) []string {
+	set := make(map[string]bool)
+	for _, s := range src {
+		set[s] = true
+	}
+	out := make([]string, 0, len(set))
+	for s := range set {
+		out = append(out, s)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// Authorize evaluates the decision function per CLC-v1 §8 with a single
+// effective grant (§9.3 single-grant path).
 func Authorize(effectiveGrant Grant, op Operation) Decision {
-	// Absent/empty grant: no capability to check → fail-closed (§9 layer 10).
-	if effectiveGrant.ID == "" {
-		return Decision{Verdict: "deny", Reason: ErrCapabilityNotAuth.Error()}
+	return AuthorizeSet([]Grant{effectiveGrant}, op)
+}
+
+// AuthorizeSet evaluates the §9.3 multi-grant aggregation (rev CLC-1.3):
+//   - grants all absent/empty → deny capability_not_authorized (resolved
+//     before any layer check, per §9.3 pre-check);
+//   - otherwise operation layer-1 validation runs first, exactly as the
+//     single-grant path;
+//   - each grant with a matching operation ID is a covering grant; its
+//     params are checked (paramsSubset) then its constraints
+//     (ValidateConstraint → CheckConstraint);
+//   - ANY covering grant whose params+constraints fully allow authorizes
+//     the operation (union semantics);
+//   - residual obligations (recognized-but-unevaluated constraints) are
+//     unioned across the covering-and-allowing grants → allow_unresolved;
+//   - if no covering grant allows: params/constraint-level denials from
+//     covering grants surface as the first covering grant's reason in
+//     canonical (input) order; grants that did not cover collapse to
+//     capability_not_authorized.
+func AuthorizeSet(grants []Grant, op Operation) Decision {
+	absent := true
+	for _, g := range grants {
+		if g.ID != "" {
+			absent = false
+			break
+		}
+	}
+	if absent {
+		return Decision{Verdict: VerdictDeny, Reason: ErrCapabilityNotAuth.Error()}
 	}
 	// Step 1: Validate operation
 	if op.ID == "" {
-		return Decision{Verdict: "deny", Reason: ErrMissingCapabilityID.Error()}
+		return Decision{Verdict: VerdictDeny, Reason: ErrMissingCapabilityID.Error()}
 	}
 	if err := ValidateCapabilityID(op.ID); err != nil {
 		// Propagate the specific layer-1 code (missing_capability_id /
 		// unsupported_wildcard / invalid_capability_id) instead of collapsing
 		// every malformed operation id into the generic code.
-		return Decision{Verdict: "deny", Reason: err.Error()}
+		return Decision{Verdict: VerdictDeny, Reason: err.Error()}
 	}
 
 	// Validate operation params for null
 	if op.Params != nil {
 		if err := ValidateOperationParams(op.Params); err != nil {
-			return Decision{Verdict: "deny", Reason: err.Error()}
+			return Decision{Verdict: VerdictDeny, Reason: err.Error()}
 		}
 	}
 
-	// Step 2: Check entailment
-	result := Entails(effectiveGrant, op)
-	if !result.Entails {
-		if isParamsLevelReason(result.Reason) {
-			return Decision{Verdict: "deny", Reason: result.Reason}
+	var unresolved []string
+	var allowReasonFirst string // first covering-grant params/constraint-layer denial (input order)
+	anyAllowed := false
+	for _, g := range grants {
+		if g.ID == "" {
+			continue
 		}
-		return Decision{Verdict: "deny", Reason: ErrCapabilityNotAuth.Error()}
+		// Step 2: Check entailment
+		result := Entails(g, op)
+		if !result.Entails {
+			if isParamsLevelReason(result.Reason) && allowReasonFirst == "" {
+				allowReasonFirst = result.Reason
+			}
+			continue
+		}
+		// Step 3: Evaluate constraints (§9 step 4; rev CLC-1.2/1.3).
+		failed := false
+		pg := []string{}
+		for _, c := range g.Constraints {
+			if err := ValidateConstraint(c); err != nil {
+				failed = true
+				if allowReasonFirst == "" {
+					allowReasonFirst = err.Error()
+				}
+				break
+			}
+			if err := CheckConstraint(c, op); err != nil {
+				failed = true
+				if allowReasonFirst == "" {
+					allowReasonFirst = err.Error()
+				}
+				break
+			}
+			if !coreEvaluatesConstraint(c) {
+				pg = append(pg, c)
+			}
+		}
+		if failed {
+			continue
+		}
+		// This covering grant authorizes the operation; keep scanning so the
+		// residual-obligation union is stable across grant order.
+		anyAllowed = true
+		unresolved = append(unresolved, pg...)
 	}
 
-	// Step 3: Evaluate constraints
-	for _, c := range effectiveGrant.Constraints {
-		if err := ValidateConstraint(c); err != nil {
-			return Decision{Verdict: "deny", Reason: ErrUnknownConstraint.Error()}
+	if !anyAllowed {
+		if allowReasonFirst != "" {
+			return Decision{Verdict: VerdictDeny, Reason: allowReasonFirst}
 		}
-		// Known constraint - check if violated
-		if err := CheckConstraint(c, op); err != nil {
-			return Decision{Verdict: "deny", Reason: err.Error()}
-		}
+		return Decision{Verdict: VerdictDeny, Reason: ErrCapabilityNotAuth.Error()}
 	}
-
-	return Decision{Verdict: "allow"}
+	uniq := sortedSet(unresolved)
+	if len(uniq) > 0 {
+		return Decision{Verdict: VerdictAllowUR, Unresolved: uniq}
+	}
+	return Decision{Verdict: VerdictAllow}
 }
 
-// knownConstraintTypes is the set of constraint types known to this v1 implementation.
-// Unknown types are rejected (fail-closed per CLC-v1 §7).
-var knownConstraintTypes = map[string]bool{
-	"max_rows":     true,
-	"time:window":  true,
-	"network:cidr": true,
+// coreEvaluatesConstraint reports whether the v1 core has an evaluator for a
+// constraint's type (§8.1).  Only max_rows is core-evaluated; time/network
+// are recognized-but-unevaluated and surface via the decision's unresolved
+// field (§8.4 residual-obligation channel).
+func coreEvaluatesConstraint(c string) bool {
+	parts := strings.Split(c, ":")
+	if len(parts) < 2 {
+		return false
+	}
+	if parts[0] != reservedScheme || !recognizedConstraintIdentities[parts[0]+":"+parts[1]] {
+		return false
+	}
+	return parts[1] == "max_rows"
 }
 
-// ValidateConstraint checks if a constraint is known (CLC-v1 §7).
+// recognizedConstraintIdentities is the set of (scheme,type) pairs this v1
+// core recognizes (rev CLC-1.3 §8.1): the type name alone never selects an
+// evaluator.  Only `varwof/constraint-v1` declares core-recognized types;
+// any other scheme's constraint — including e.g. `foo/db-v1:max_rows` — is
+// not core-recognized and fails closed with unknown_constraint.
+var recognizedConstraintIdentities = map[string]bool{
+	reservedMaxRows: true,
+	reservedTimeWin: true,
+	reservedNetCIDR: true,
+}
+
+// ValidateConstraint checks a constraint against §8.1's identity × value
+// grammar (rev CLC-1.2/1.3): an unrecognized (scheme,type) → unknown_constraint;
+// a recognized type whose value is out of grammar → invalid_constraint.
 func ValidateConstraint(c string) error {
 	parts := strings.Split(c, ":")
 	if len(parts) < 2 {
 		return ErrUnknownConstraint
 	}
-	// Check if constraint type is known
-	// Constraint format: scheme:type or scheme:type:params
-	// We check the type part (index 1)
-	if len(parts) >= 2 {
-		constraintType := parts[1]
-		if !knownConstraintTypes[constraintType] {
-			return ErrUnknownConstraint
+	identity := parts[0] + ":" + parts[1]
+	if !recognizedConstraintIdentities[identity] {
+		return ErrUnknownConstraint
+	}
+	switch parts[1] {
+	case "max_rows":
+		// Strict JSON non-negative integer, exactly one token (§8.1
+		// value-grammar table).  parts[2:] must be empty beyond parts[2].
+		if len(parts) != 3 || !isStrictJSONInteger(parts[2]) {
+			return fmt.Errorf("%w: %s", ErrInvalidConstraint, c)
+		}
+	case "time":
+		// Value = JSON array of ≤32 {start,end} UTC daily windows (§8.1,
+		// rev CLC-1.3: same-day segments only, no cross-midnight single segment).
+		joined := constraintParams(c)
+		if !strings.HasPrefix(joined, "window:") || !validTimeWindowJSON(strings.TrimPrefix(joined, "window:")) {
+			return fmt.Errorf("%w: %s", ErrInvalidConstraint, c)
+		}
+	case "network":
+		// Value = JSON array of ≤32 CIDR strings (§8.1).
+		joined := constraintParams(c)
+		if !strings.HasPrefix(joined, "cidr:") || !validCIDRListJSON(strings.TrimPrefix(joined, "cidr:")) {
+			return fmt.Errorf("%w: %s", ErrInvalidConstraint, c)
 		}
 	}
 	return nil
 }
 
-// CheckConstraint evaluates a constraint against an operation.
+// CheckConstraint evaluates a constraint against an operation (§8.1).
+// Rev CLC-1.2: max_rows uses a strict integer and fails closed when the op
+// carries no max_rows value (previously the sloppy %f scan silently skipped
+// both malformed values and missing op params).
 func CheckConstraint(c string, op Operation) error {
-	// Parse constraint type
 	parts := strings.Split(c, ":")
 	if len(parts) < 3 {
 		return nil // No params to check
+	}
+	// Defensive identity gate (rev CLC-1.3): ValidateConstraint is
+	// authoritative and rejects non-core schemes first, so this is
+	// unreachable via Authorize.
+	if !recognizedConstraintIdentities[parts[0]+":"+parts[1]] {
+		return nil
 	}
 	constraintType := parts[1]
 
 	switch constraintType {
 	case "max_rows":
-		if len(parts) >= 3 {
-			var maxVal float64
-			if _, err := fmt.Sscanf(parts[2], "%f", &maxVal); err == nil {
-				if rows, ok := op.Params["max_rows"].(float64); ok {
-					if rows > maxVal {
-						return fmt.Errorf("max_rows:violated")
-					}
-				}
-			}
+		if len(parts) != 3 || !isStrictJSONInteger(parts[2]) {
+			// Unreachable via Authorize (ValidateConstraint rejects the grant
+			// with invalid_constraint first); defensive no-op.
+			return nil
+		}
+		maxVal, _ := strconv.Atoi(parts[2])
+		rows, ok := op.Params["max_rows"].(float64)
+		if !ok {
+			// Op-absent max_rows → fail closed (§8.1 value-grammar table).
+			return fmt.Errorf("max_rows:violated")
+		}
+		if rows > float64(maxVal) {
+			return fmt.Errorf("max_rows:violated")
 		}
 	}
 	return nil
+}
+
+// constraintParams returns a constraint's value part — everything after
+// `scheme:type:` — with JSON colons preserved (a value is rejoined from the
+// colon-split parts; rev CLC-1.2 fixes the kind of corruption that chopped
+// window arrays on their inner colons).  Callers then strip the type-
+// specific domain crumb (`window:` / `cidr:`).
+func constraintParams(c string) string {
+	parts := strings.Split(c, ":")
+	if len(parts) < 3 {
+		return ""
+	}
+	return strings.Join(parts[2:], ":")
+}
+
+// isStrictJSONInteger reports whether s is a canonical JSON non-negative
+// integer: digits only, no sign, no fraction, no exponent, no leading zero
+// (rev CLC-1.2 value grammar).  Deliberately stricter than Go's %f scan,
+// which would accept "10abc", "1e3" and "+10".
+func isStrictJSONInteger(s string) bool {
+	if s == "" {
+		return false
+	}
+	if len(s) > 1 && s[0] == '0' {
+		return false
+	}
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+const (
+	maxTimeWindows = 32
+	maxCIDRList    = 32
+)
+
+var timeOfDayRE = regexp.MustCompile(`^([01]?[0-9]|2[0-3]):[0-5][0-9](:[0-5][0-9])?$`)
+
+// validTimeWindowJSON validates the time constraint's value grammar (§8.1,
+// rev CLC-1.3): a non-empty JSON array of ≤ maxTimeWindows objects, each
+// exactly {start,end} of a time-of-day (HH:MM[:SS]) treated as UTC,
+// daily-repeating.  Each segment is SAME-DAY: startSod < endSod where the
+// reserved end "00:00" denotes next-day midnight (86400s) — a single segment
+// may therefore not cross midnight (a crossing like 22:00→06:00 is invalid
+// and must be split), the full-day segment 00:00→00:00 is invalid, and the
+// segment list must be ascending and non-overlapping (wrapping-tail segments
+// such as 22:00→00:00 are plain same-day intervals [22:00,24:00) and sort
+// last).
+func validTimeWindowJSON(raw string) bool {
+	trimmed := strings.TrimSpace(raw)
+	if !strings.HasPrefix(trimmed, "[") {
+		return false
+	}
+	var segments []map[string]json.RawMessage
+	dec := json.NewDecoder(strings.NewReader(trimmed))
+	if err := dec.Decode(&segments); err != nil {
+		return false
+	}
+	if _, err := dec.Token(); err != io.EOF {
+		return false
+	}
+	if len(segments) == 0 || len(segments) > maxTimeWindows {
+		return false
+	}
+	prevEnd := -1
+	for _, s := range segments {
+		if len(s) != 2 {
+			return false
+		}
+		startRaw, okStart := s["start"]
+		endRaw, okEnd := s["end"]
+		if !okStart || !okEnd {
+			return false
+		}
+		var start, end string
+		if json.Unmarshal(startRaw, &start) != nil || json.Unmarshal(endRaw, &end) != nil {
+			return false
+		}
+		if !timeOfDayRE.MatchString(start) || !timeOfDayRE.MatchString(end) {
+			return false
+		}
+		startSod := secondsOfDay(start)
+		endSod := secondsOfDay(end)
+		if end == "00:00" {
+			endSod = 86400 // reserved: next-day midnight
+		}
+		if startSod >= endSod {
+			return false // same-day starts before end; 00:00→00:00 (0 vs 86400) still excluded below
+		}
+		if start == "00:00" && end == "00:00" {
+			return false // full-day segment is invalid
+		}
+		if prevEnd >= 0 && startSod < prevEnd {
+			return false // not ascending / overlapping (touching allowed)
+		}
+		prevEnd = endSod
+	}
+	return true
+}
+
+// secondsOfDay converts an HH:MM[:SS] string (already matched against
+// timeOfDayRE) to seconds since midnight.
+func secondsOfDay(t string) int {
+	parts := strings.Split(t, ":")
+	var h, m, s int
+	fmt.Sscanf(parts[0], "%d", &h)
+	fmt.Sscanf(parts[1], "%d", &m)
+	if len(parts) == 3 {
+		fmt.Sscanf(parts[2], "%d", &s)
+	}
+	return h*3600 + m*60 + s
+}
+
+var (
+	ipv4CIDRRE  = regexp.MustCompile(`^([0-9]{1,3}\.){3}[0-9]{1,3}/([0-9]|[12][0-9]|3[0-2])$`)
+	ipv6ShapeRE = regexp.MustCompile(`^[0-9a-fA-F:]+$`)
+)
+
+func validIPv4Octets(ip string) bool {
+	parts := strings.Split(ip, ".")
+	for _, p := range parts {
+		n, err := strconv.Atoi(p)
+		if err != nil || n < 0 || n > 255 {
+			return false
+		}
+	}
+	return true
+}
+
+// validCIDRString validates a numeric CIDR string (shape-only, §8.1 value
+// grammar; the core does not evaluate network constraints — that is the
+// scheme's job per §11).
+func validCIDRString(s string) bool {
+	slash := strings.LastIndex(s, "/")
+	if slash <= 0 || slash == len(s)-1 {
+		return false
+	}
+	ipPart := s[:slash]
+	prefix := s[slash+1:]
+	if !isStrictJSONInteger(prefix) {
+		return false
+	}
+	mask, err := strconv.Atoi(prefix)
+	if err != nil || mask < 0 || mask > 128 {
+		return false
+	}
+	if strings.Contains(ipPart, ":") {
+		if mask > 128 {
+			return false
+		}
+		// Shape-only: allow "::"-compressed forms; reject a lone trailing ":".
+		return ipv6ShapeRE.MatchString(ipPart) && !(strings.HasSuffix(ipPart, ":") && !strings.HasSuffix(ipPart, "::"))
+	}
+	if mask > 32 {
+		return false
+	}
+	return ipv4CIDRRE.MatchString(s) && validIPv4Octets(ipPart)
+}
+
+// validCIDRListJSON validates the network constraint's value grammar: a
+// non-empty JSON array of ≤ maxCIDRList numeric CIDR strings.
+func validCIDRListJSON(raw string) bool {
+	trimmed := strings.TrimSpace(raw)
+	if !strings.HasPrefix(trimmed, "[") {
+		return false
+	}
+	var list []string
+	dec := json.NewDecoder(strings.NewReader(trimmed))
+	if err := dec.Decode(&list); err != nil {
+		return false
+	}
+	if _, err := dec.Token(); err != io.EOF {
+		return false
+	}
+	if len(list) == 0 || len(list) > maxCIDRList {
+		return false
+	}
+	for _, e := range list {
+		if !validCIDRString(e) {
+			return false
+		}
+	}
+	return true
 }
 
 // CanonicalJSON returns RFC 8785 (JCS) canonical JSON.

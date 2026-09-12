@@ -90,7 +90,7 @@ go run ./demo/rule-exec -publish rules/ -out published/
 | `rule-exec -publish` | ✅ sign | ✅ | ✗ | ✗ |
 | `LoadRulePlugin` (load) | ✅ verify | ✅ | ✗ | ✅ |
 | `gen-backfill` (data) | — | — | digest drift check | — |
-| `vectors-run` / property tests | — | — | CLC semantic conformance (83 vectors + 524 property cases) | — |
+| `vectors-run` / property tests | — | — | CLC semantic conformance (98 vectors + 1184 property cases) | — |
 
 **Known gap:** the parameter contract only runs on the generation path
 (`gen-capability` / `gen-rule`).  A hand-written rule can bypass it, be signed and be
@@ -125,7 +125,8 @@ go test ./ruleexec/ ./cmd/gen-rule/ -v        # rule validation, publication bou
 go run ./demo/rule-exec                        # rule → signature → validation → conditions → flow
 ```
 
-Current state: CLC corpus 83/83 in Go, Python and TypeScript; P11 property 524 cases with
+Current state: CLC corpus 98/98 in Go, Python and TypeScript (covering the
+rev CLC-1.3 `allow_unresolved` verdict and §9.3 multi-grant aggregation); P11 property 1184 cases with
 0 failures in all three; property cases reproducible (byte-identical regeneration); OCMP
 offline vectors 12 cases covering 11/11 normative codes; rule-layer tests green; the
 TypeScript mirror 3/3; SQL parity 4/4.

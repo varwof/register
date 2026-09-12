@@ -44,7 +44,8 @@ func TestRevisionCompatible(t *testing.T) {
 	}{
 		{"CLC-1.0", true},
 		{"CLC-1.1", true},
-		{"CLC-1.2", true}, // impl declares 1.1; 1.2 > 1.1 → false below
+		{"CLC-1.2", true},
+		{"CLC-1.3", true},
 		{"CLC-2.0", false},
 		{"CLC-0.9", false},
 		{"x-1.0", false},
@@ -52,19 +53,13 @@ func TestRevisionCompatible(t *testing.T) {
 		{"CLC-1.a", false},
 		{"", false},
 	}
-	// fix: 1.2 should be false (minor > ours)
-	for i := range cases {
-		if cases[i].rev == "CLC-1.2" {
-			cases[i].want = false
-		}
-	}
 	for _, c := range cases {
 		if got := RevisionCompatible(c.rev); got != c.want {
 			t.Errorf("RevisionCompatible(%q) = %v, want %v", c.rev, got, c.want)
 		}
 	}
-	if CLCRevision != "CLC-1.1" {
-		t.Errorf("CLCRevision = %q, want CLC-1.1", CLCRevision)
+	if CLCRevision != "CLC-1.3" {
+		t.Errorf("CLCRevision = %q, want CLC-1.3", CLCRevision)
 	}
 }
 

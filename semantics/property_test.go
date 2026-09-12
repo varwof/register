@@ -56,6 +56,7 @@ var normativeCodes = map[string]bool{
 	"absent_source":                      true,
 	"capability_not_authorized":          true,
 	"unknown_constraint":                 true,
+	"invalid_constraint":                 true,
 }
 
 func codeOf(err error) string {
@@ -201,8 +202,10 @@ func TestIntersectionProperty(t *testing.T) {
 		// Closure belongs to the effective grant only: an operation carrying a
 		// parameter key that no source declared must be denied (§9.3 layer 7).
 		// Only a *bounded* effective grant closes the key set; an effective grant
-		// with no params at all is unconstrained by definition (§6.2).
-		if merged.ID != "" && merged.Params != nil {
+		// with no params at all is unconstrained by definition (§6.2), and
+		// under rev CLC-1.3 an EMPTY params object is likewise unconstrained
+		// (§9.3: {} ≡ absent), so key closure does not apply to it either.
+		if merged.ID != "" && merged.Params != nil && len(merged.Params) > 0 {
 			probe := Operation{ID: merged.ID, Params: map[string]any{}}
 			for k, v := range merged.Params {
 				probe.Params[k] = v
