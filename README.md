@@ -59,9 +59,29 @@ register/
 Capability definitions themselves are **not** in this repository; they live in
 the separate `capability` module (`../capability/data/<vendor>/<product>/v*.json`).
 
+## Provenance and licensing
+
+`semantics/` and the rest of this repository are written from published
+specifications and this project's own language text; **no third-party code was
+copied**.  Where a specification's rule is normative here, it is cited by
+section and restated in this project's own words rather than reproduced, and the
+Internet-Drafts referred to are referenced as work in progress, not as normative
+sources.  The conformance corpora live in
+[`varwof/capability`](https://github.com/varwof/capability) (`data/_vectors/clc-v1/`).
+
 ## CLC-v1 semantics (`semantics/`) and conformance runner
 
-`semantics/` is the Go reference implementation of CLC-v1:
+Two orthogonal axes, not a stack: the **decision axis** decides whether a call
+counts as doing something that was authorized, the **execution axis** decides
+whether to act now and what to record.  CLC owns the decision axis; `ruleexec/`
+owns the execution axis (see [docs/capability-language-layers.md](docs/capability-language-layers.md)).
+Across both run the **authorization face** ("what may be done") and the
+**evidence face** ("what was done, and the evidence for it").  A draft such as
+ACA is a *composition contract* over these two axes, not a third layer.
+
+`semantics/` is the Go reference implementation of CLC-v1, in two groups:
+
+**Core semantics** — required by the conformance classes:
 
 | Function | Purpose |
 |---|---|
@@ -69,7 +89,24 @@ the separate `capability` module (`../capability/data/<vendor>/<product>/v*.json
 | `Entails(grant, op)` | authorization binding (§6) |
 | `Intersect(grants...)` | effective grant set (§7) |
 | `Authorize(grant, op)` | decision function (§9) |
+| `Combine(alg, decisions...)` | conflict resolution across sources (default `deny-overrides`) |
+| `Discharge(decision, understood)` | consumer-side obligation rule (§8.4 + XACML §2.13/§7.2.1) |
+| `EvaluateEvidenceConstraint` | evidence-side value grammar and three-valued evaluation (§8.2/§10) |
+| `Requirement` / `EvaluateRequirement` | the relying party's sufficiency bar (`CLC-REQUIREMENT-v1`) |
+| `ComputeActionID` / `Match` | instance identity and binding (§4.2/§6.4) |
 | `CanonicalJSON` | JCS canonicalization for digests |
+
+**Optional profile** — carried, not required: a deployment that only decides
+online pays none of this.  Everything here is off unless a caller turns it on:
+
+| Function | Purpose |
+|---|---|
+| `Record` / `RecordWith` | Decision Record: frozen inputs + verdict, independently re-computable |
+| `RecordWithContext` / `VerifyAsOf` | RATS §10 freshness input (explicit clock / nonce / epoch) |
+| `SourceChain` / `StandingOn` | the authorization sources a decision rested on (byte-backed edges) |
+| `Envelope` / `PAE` | DSSE + in-toto transport for a record (`cmd/record -envelope`) |
+| `BuildChallengeFromDecision` | the machine-readable "what is still missing" (`CLC-CHALLENGE-v1`) |
+| `DecisionRecord.Verify()` | re-run the language over a record and check digest, verdict and residual obligations |
 
 Failures are fail-closed and carry stable reason codes (§9.4); when several
 conditions fail, the normative ordering (§9.3) selects the single reported code.
@@ -81,8 +118,41 @@ asserted, and the process exits non-zero on any mismatch**:
 CLC_VECTORS=../capability/data/_vectors/clc-v1/vectors.json go run ./cmd/vectors-run/
 ```
 
+The evidence side has its own corpus and runner (CLC-E, 30 vectors):
+
+```bash
+CLC_EVIDENCE_VECTORS=../capability/data/_vectors/clc-v1/evidence-vectors.json go run ./cmd/evidence-vectors-run/
+```
+
+Byte budget of the optional artifacts is reproducible (record / envelope /
+challenge sizes, and the constraint strings that drive certificate size):
+
+```bash
+go run ./cmd/size-report/
+```
+
 CI (`.github/workflows/clc-conformance.yml`) clones `varwof/capability` and runs
 `gofmt` / `go vet` / `go test` / the vectors on every push and pull request.
+
+### Decision Records (`semantics/record.go`)
+
+`Record` freezes *what was decided* — the canonical inputs, the CLC revision,
+the verdict, the reason and the residual obligations — behind a SHA-256 digest
+of the inputs, so a holder of the record alone can re-run the same revision and
+get the same answer.  `Verify` does exactly that, and fails closed with
+`record_input_digest_mismatch`, `record_verdict_mismatch`,
+`record_operation_count` or `record_unsupported_revision` on anything that does
+not reproduce.
+
+```bash
+go run ./cmd/record input.json          # {"grants":[...],"operation":{...}} -> record
+go run ./cmd/record -verify record.json # re-run the language over a record
+```
+
+Note: `CanonicalJSON` is a simplified JCS (`json.Marshal`), so digests are
+comparable between holders of this implementation, not yet with other JCS
+implementations.  Constraint *evaluation* results and authorization source
+chains are not part of a record yet — see the roadmap note in `dev-docs`.
 
 ## Execution layer (`ruleexec/`)
 

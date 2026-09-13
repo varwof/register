@@ -1,6 +1,12 @@
 # Capability language layers: decision (CLC-v1) vs execution (ruleexec)
 
-One language, two layers:
+> **Terminology (2026-09-13)**: read "layers" here as two **orthogonal axes** — the decision axis
+> (CLC: does this call count as doing what was authorized) and the execution axis (ruleexec: act now,
+> with bounded flow and what gets recorded).  Across both run the **authorization face** and the
+> **evidence face**; a composition draft (ACA) is a contract over the two axes, not a third layer.
+> See `dev-docs/aic/zh/26-layer-boundary-and-complexity.md` for the boundary matrix.
+
+One language, two axes:
 
 ```
 CLC-v1 (decision, no control flow)  ->  ruleexec (execution: conditions/flow/SQL, budgets)  ->  effects
@@ -12,6 +18,7 @@ CLC-v1 (decision, no control flow)  ->  ruleexec (execution: conditions/flow/SQL
 | Generic parameter semantics (null, explicit empty bound, subset) | CLC-v1 (`semantics.ValidateGrantParams`) | one definition, consumed everywhere |
 | Scheme-specific parameter contract (e.g. database-v1 SELECT structure) | the scheme (`register.ValidateSchemeParams`) | lives with the scheme, not with the engine |
 | Runtime context conditions (variables, request fields, roles) | ruleexec | must not decide authorization |
+| Optional profile artifacts (decision record, envelope, source chain, freshness context, challenge) | CLC-v1 `semantics/` | **default off**; a deployment that only decides online pays none of them |
 | Execution flow, budgets, SQL/HTTP invocation, retries | ruleexec | bounded; wall-clock timeout removed from published defaults |
 
 Two rules:
