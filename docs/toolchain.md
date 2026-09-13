@@ -116,5 +116,5 @@ go test ./ruleexec/ ./cmd/gen-rule/ -v        # 规则校验、发布边界、�
 go run ./demo/rule-exec                        # 规则 → 签名 → 校验 → 条件 → 流程
 ```
 
-当前状态：CLC 向量 98/98（Go、Python、TypeScript，含 CLC-1.3 的 `allow_unresolved` 独立 verdict 与 §9.3 多 grant 聚合）、P11 属性 1184 例 0 失败、属性用例可复现（重生成字节一致）、
+当前状态：CLC 向量 105/105（Go、Python、TypeScript，含 CLC-1.3 的 `allow_unresolved` 独立 verdict 与 §9.3 多 grant 聚合）、P11 属性 1184 例 0 失败、属性用例可复现（重生成字节一致）、
 OCMP 离线向量 12 例覆盖 11/11 规范码、规则层测试全绿、TS 镜像 3/3、SQL parity 4/4。

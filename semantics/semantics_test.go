@@ -1,6 +1,8 @@
 package semantics
 
 import (
+	"errors"
+	"math"
 	"testing"
 )
 
@@ -96,5 +98,16 @@ func TestAuthorize(t *testing.T) {
 				t.Errorf("Authorize() = %v, want %v (reason: %s)", result.Verdict, tt.verdict, result.Reason)
 			}
 		})
+	}
+}
+
+func TestNonFiniteParamsAreRejected(t *testing.T) {
+	op := Operation{ID: "std/database-v1:query:SELECT", Params: map[string]any{"limit": math.NaN()}}
+	if err := ValidateOperationParams(op.Params); !errors.Is(err, ErrInvalidParamsNumber) {
+		t.Fatalf("NaN params: got %v, want ErrInvalidParamsNumber", err)
+	}
+	d := Authorize(Grant{ID: op.ID, Params: map[string]any{"limit": float64(100)}}, op)
+	if d.Verdict != "deny" || d.Reason != "invalid_params_number" {
+		t.Fatalf("NaN under a bound: got %+v, want deny/invalid_params_number", d)
 	}
 }

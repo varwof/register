@@ -81,6 +81,30 @@ var (
 	ErrUnsupportedLangRev  = errors.New("unsupported_language_revision")
 )
 
+// rejectNonFinite refuses non-finite numbers in params (rev CLC-1.4): JSON
+// cannot represent them and NaN compares false against every bound.
+func rejectNonFinite(v any) error {
+	switch val := v.(type) {
+	case float64:
+		if math.IsNaN(val) || math.IsInf(val, 0) {
+			return ErrInvalidParamsNumber
+		}
+	case []any:
+		for _, e := range val {
+			if err := rejectNonFinite(e); err != nil {
+				return err
+			}
+		}
+	case map[string]any:
+		for _, e := range val {
+			if err := rejectNonFinite(e); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 // ValidateCapabilityID checks whether an ID conforms to CLC-v1 §2 grammar.
 // v1 allows: literal segments and trailing * as a complete segment.
 func ValidateCapabilityID(id string) error {
@@ -139,6 +163,9 @@ func ValidateGrantParams(params map[string]any) error {
 		if v == nil {
 			return fmt.Errorf("%w: %s", ErrInvalidParamsNull, k)
 		}
+		if err := rejectNonFinite(v); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -152,6 +179,9 @@ func ValidateOperationParams(params map[string]any) error {
 	for k, v := range params {
 		if v == nil {
 			return fmt.Errorf("%w: %s", ErrInvalidParamsNull, k)
+		}
+		if err := rejectNonFinite(v); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -199,7 +229,7 @@ func paramsDepth(v any, depth int) int {
 // (rev CLC-1.3 · 2026-09-12: CLC-1.3 is additive — `allow_unresolved`
 // verdict + §9.3 identity/aggregation clarifications — so CLC-1.2/1.1
 // inputs still read fine.)
-const CLCRevision = "CLC-1.3"
+const CLCRevision = "CLC-1.4"
 
 const (
 	// maxParamsSerializedBytes bounds the JCS-serialized params size
@@ -1113,6 +1143,12 @@ func CheckConstraint(c string, op Operation) error {
 		rows, ok := op.Params["max_rows"].(float64)
 		if !ok {
 			// Op-absent max_rows → fail closed (§8.1 value-grammar table).
+			return fmt.Errorf("max_rows:violated")
+		}
+		// Op-side value domain (rev CLC-1.4): a row count must be a finite
+		// non-negative integer; anything else cannot be shown to satisfy the
+		// constraint, so it fails closed instead of passing unchecked.
+		if math.IsNaN(rows) || math.IsInf(rows, 0) || rows != math.Trunc(rows) || rows < 0 {
 			return fmt.Errorf("max_rows:violated")
 		}
 		if rows > float64(maxVal) {
