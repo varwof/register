@@ -4,7 +4,7 @@
 > (CLC: does this call count as doing what was authorized) and the execution axis (ruleexec: act now,
 > with bounded flow and what gets recorded).  Across both run the **authorization face** and the
 > **evidence face**; a composition draft (ACA) is a contract over the two axes, not a third layer.
-> See `dev-docs/aic/zh/26-layer-boundary-and-complexity.md` for the boundary matrix.
+> See Section 11 of `capability-language-core-v1.md` for the boundary matrix.
 
 One language, two axes:
 

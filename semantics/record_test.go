@@ -221,8 +221,7 @@ func TestRecordTamperDetection(t *testing.T) {
 }
 
 // TestRecordRealPKIExample pins the one record taken from a real run of the
-// whole chain (user certificate PA -> DA v2 -> AIC -> CLC), documented in
-// dev-docs/aic/zh/17-clc-evidence-gap.md section 5: a recognized but
+// whole chain (user certificate PA -> DA v2 -> AIC -> CLC): a recognized but
 // unevaluated time:window constraint yields allow_unresolved plus a residual
 // obligation, while the same operation under an unconstrained grant yields
 // a plain allow.

@@ -152,7 +152,7 @@ go run ./cmd/record -verify record.json # re-run the language over a record
 Note: `CanonicalJSON` is a simplified JCS (`json.Marshal`), so digests are
 comparable between holders of this implementation, not yet with other JCS
 implementations.  Constraint *evaluation* results and authorization source
-chains are not part of a record yet — see the roadmap note in `dev-docs`.
+chains are not part of a record yet — see `dev-docs/README.md`.
 
 ## Execution layer (`ruleexec/`)
 

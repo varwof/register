@@ -3,8 +3,9 @@
 
 // Command size-report prints the byte budget of the evidence artifacts this
 // module produces, so a change to a record, envelope or challenge shape can be
-// compared against the numbers recorded in
-// dev-docs/aic/zh/25-clc-wire-size-budget.md.
+// compared against the numbers recorded in the wire-size budget note that
+// accompanies the language revision (capability `docs/`), so the figures stay
+// reviewable next to the specification they belong to.
 //
 // The inputs are fixed samples, not a benchmark: the point is a stable,
 // reproducible figure for "how much does one decision cost on the wire".
