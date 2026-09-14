@@ -234,7 +234,15 @@ func paramsDepth(v any, depth int) int {
 // set is `jcs-sha256` only, §10 states that a top-level `unknown` yields
 // UNSATISFIED, §11 separates `allow_unresolved` from evidence, and §12 keeps
 // delegation containment out of the language.  CLC-1.4 inputs still read.)
-const CLCRevision = "CLC-1.5"
+// (rev CLC-1.6 · 2026-09-14: `jcs-sha256` is a real RFC 8785 implementation.
+// Go's json.Marshal HTML-escaped `&`/`<`/`>` and ordered keys by UTF-8 bytes,
+// so identifiers and input digests over such material were not JCS and
+// disagreed across implementations.  CanonicalJSON now sorts object members by
+// UTF-16 code units, escapes strings per §3.2.2.2, renders numbers per
+// ECMAScript Number::toString, and refuses invalid UTF-8.  The bytes change for
+// `&`/`<`/`>` material — a compatibility note for stored digests — while
+// CLC-1.4/1.5 inputs still read.)
+const CLCRevision = "CLC-1.6"
 
 const (
 	// maxParamsSerializedBytes bounds the JCS-serialized params size
@@ -1347,13 +1355,6 @@ func validCIDRListJSON(raw string) bool {
 		}
 	}
 	return true
-}
-
-// CanonicalJSON returns RFC 8785 (JCS) canonical JSON.
-// This is a simplified implementation; production use should use
-// a proper JCS library.
-func CanonicalJSON(v any) ([]byte, error) {
-	return json.Marshal(v)
 }
 
 // isParamsLevelReason reports whether an entailment failure is a

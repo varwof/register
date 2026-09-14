@@ -223,6 +223,61 @@ func TestEvaluateRequirementUnknownIsFailClosed(t *testing.T) {
 	}
 }
 
+// §10's exported report is binary: an internal `unknown` must collapse to
+// UNSATISFIED with a stable reason, never SATISFIED.
+func TestRequirementResultSatisfaction(t *testing.T) {
+	ctx := EvidenceContext{Now: time.Now().UTC()}
+
+	req := wireRequirement()
+	facts := []EvidenceFact{
+		evFact("human-authorization", "alice", true),
+		evFact("human-authorization", "bob", true),
+		evFact("policy-permit", "policy-1", true),
+	}
+	got, err := EvaluateRequirement(req, facts, ctx)
+	if err != nil {
+		t.Fatalf("EvaluateRequirement: %v", err)
+	}
+	if rep := got.Satisfaction(); rep.Verdict != SatisfactionSatisfied || rep.Reason != "" {
+		t.Fatalf("satisfied report = %+v, want SATISFIED with no reason", rep)
+	}
+
+	// A missing role makes the expression false: UNSATISFIED, stable reason.
+	noPermit := []EvidenceFact{
+		evFact("human-authorization", "alice", true),
+		evFact("human-authorization", "bob", true),
+	}
+	got, err = EvaluateRequirement(req, noPermit, ctx)
+	if err != nil {
+		t.Fatalf("EvaluateRequirement: %v", err)
+	}
+	if rep := got.Satisfaction(); rep.Verdict != SatisfactionUnsatisfied || rep.Reason != SatisfactionReasonExpressionFalse {
+		t.Fatalf("false expression report = %+v, want UNSATISFIED/%s", rep, SatisfactionReasonExpressionFalse)
+	}
+
+	// An undecidable constraint is `unknown` internally but UNSATISFIED in the
+	// report, carrying the constraint's own stable reason.
+	unknownReq := wireRequirement()
+	unknownReq.Expression = "human-authorization"
+	unknownReq.Constraints = []RequirementConstraint{
+		{Role: "human-authorization", Constraint: "varwof/evidence-v1:consumption:once"},
+	}
+	got, err = EvaluateRequirement(unknownReq, []EvidenceFact{evFact("human-authorization", "alice", true)}, ctx)
+	if err != nil {
+		t.Fatalf("EvaluateRequirement: %v", err)
+	}
+	if got.Verdict != EvidenceUnknown {
+		t.Fatalf("internal verdict = %q, want unknown", got.Verdict)
+	}
+	rep := got.Satisfaction()
+	if rep.Verdict != SatisfactionUnsatisfied {
+		t.Fatalf("report verdict = %q, want UNSATISFIED (never SATISFIED from unknown)", rep.Verdict)
+	}
+	if rep.Reason != ErrEvidenceNotCoreEvaluated.Error() {
+		t.Fatalf("report reason = %q, want %q", rep.Reason, ErrEvidenceNotCoreEvaluated.Error())
+	}
+}
+
 // The requirement is part of the hashed record inputs, so a record shows which
 // bar was applied — and the bar itself is never taken from the evidence.
 func TestRecordBindsRequirementDigest(t *testing.T) {

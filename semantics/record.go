@@ -113,11 +113,11 @@ var (
 	ErrRecordRevision = errors.New("record_unsupported_revision")
 )
 
-// DigestOf returns the SHA-256 of v's canonical (JCS) JSON encoding.
+// DigestOf returns the SHA-256 of v's canonical (JCS, RFC 8785) JSON encoding.
 //
-// CanonicalJSON is a simplified JCS (see its doc comment); the digest is
-// therefore reproducible across holders of this implementation, and is
-// intended to be compared only against digests produced the same way.
+// The digest is the language's own handle, not a CAID: it is reproducible
+// across any implementation that follows RFC 8785, so two holders can agree on
+// "same decision input" by comparing digests.
 func DigestOf(v any) (Digest, error) {
 	b, err := CanonicalJSON(v)
 	if err != nil {

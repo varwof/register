@@ -232,6 +232,58 @@ func (r RequirementResult) Satisfied() bool {
 	return r.Verdict == EvidenceSatisfied
 }
 
+// SatisfactionVerdict is the verdict of §10's exported report.  The evaluation
+// itself is three-valued; this report is binary.
+type SatisfactionVerdict string
+
+const (
+	// SatisfactionSatisfied means every required role was filled and bound and
+	// no constraint failed.
+	SatisfactionSatisfied SatisfactionVerdict = "SATISFIED"
+	// SatisfactionUnsatisfied means the requirement was not met.  It covers
+	// both an internal `violated` and an internal `unknown`: §10 requires an
+	// undecidable constraint to collapse to UNSATISFIED with a stable reason,
+	// never to SATISFIED.
+	SatisfactionUnsatisfied SatisfactionVerdict = "UNSATISFIED"
+)
+
+// Report reason codes that are not already carried by a constraint evaluation.
+const (
+	// SatisfactionReasonExpressionFalse means the requirement's expression was
+	// not filled by eligible facts.
+	SatisfactionReasonExpressionFalse = "requirement:expression_false"
+	// SatisfactionReasonUnsatisfied is the fallback when no more specific
+	// reason is available; it keeps the report deterministic.
+	SatisfactionReasonUnsatisfied = "requirement:unsatisfied"
+)
+
+// Satisfaction is §10's exported report form: a binary verdict and a stable
+// reason.  It is a projection of RequirementResult and makes no new decision —
+// it exists so a consumer outside the evaluator can act on the normative
+// binary shape instead of parsing the three-valued internals.
+type Satisfaction struct {
+	Verdict SatisfactionVerdict `json:"verdict"`
+	Reason  string              `json:"reason,omitempty"`
+}
+
+// Satisfaction collapses the three-valued evaluation into §10's binary report.
+// A `violated` or an `unknown` both become UNSATISFIED; the reason is the first
+// blocking cause in deterministic order, so `unknown` never reads as SATISFIED.
+func (r RequirementResult) Satisfaction() Satisfaction {
+	if r.Verdict == EvidenceSatisfied {
+		return Satisfaction{Verdict: SatisfactionSatisfied}
+	}
+	if !r.Expression {
+		return Satisfaction{Verdict: SatisfactionUnsatisfied, Reason: SatisfactionReasonExpressionFalse}
+	}
+	for _, c := range r.Constraints {
+		if c.Verdict == EvidenceViolated || c.Verdict == EvidenceUnknown {
+			return Satisfaction{Verdict: SatisfactionUnsatisfied, Reason: c.Reason}
+		}
+	}
+	return Satisfaction{Verdict: SatisfactionUnsatisfied, Reason: SatisfactionReasonUnsatisfied}
+}
+
 // --- bounded expression parser (AEC §8 grammar) ---
 
 type requirementExpr struct {

@@ -149,10 +149,13 @@ go run ./cmd/record input.json          # {"grants":[...],"operation":{...}} -> 
 go run ./cmd/record -verify record.json # re-run the language over a record
 ```
 
-Note: `CanonicalJSON` is a simplified JCS (`json.Marshal`), so digests are
-comparable between holders of this implementation, not yet with other JCS
-implementations.  Constraint *evaluation* results and authorization source
-chains are not part of a record yet — see `dev-docs/README.md`.
+Note: `CanonicalJSON` implements **RFC 8785 (JCS)** — object members ordered by
+UTF-16 code units, `§3.2.2.2` string escaping, ECMAScript `Number::toString` —
+so `clc-action:` identifiers and Decision Record digests agree with any other
+JCS implementation.  (Before rev CLC-1.6 it was `json.Marshal`, whose HTML
+escaping made `&`/`<`/`>` digests non-JCS.)  Constraint *evaluation* results and
+authorization source chains are not part of a record yet — see
+`dev-docs/README.md`.
 
 ## Execution layer (`ruleexec/`)
 

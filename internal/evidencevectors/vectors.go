@@ -59,6 +59,14 @@ type Vector struct {
 		Error        string   `json:"error"`
 		// ActionId asserts the exact identifier string (kind=action_id).
 		ActionId string `json:"action_id"`
+		// Satisfaction asserts the exported §10 binary report (kind=requirement):
+		// verdict is SATISFIED/UNSATISFIED and reason is a stable code.  It is
+		// deliberately separate from the internal three-valued Verdict, so a
+		// vector can require an internal `unknown` to report UNSATISFIED.
+		Satisfaction *struct {
+			Verdict string `json:"verdict"`
+			Reason  string `json:"reason"`
+		} `json:"satisfaction"`
 	} `json:"expect"`
 	Derivation string `json:"derivation"`
 }
@@ -74,7 +82,11 @@ type Result struct {
 	Missing []string
 	// Expression is the observed expression result; nil when not applicable.
 	Expression *bool
-	Pass       bool
+	// SatisfactionVerdict / SatisfactionReason are the observed exported §10
+	// report (requirement vectors).
+	SatisfactionVerdict string
+	SatisfactionReason  string
+	Pass                bool
 }
 
 // Load reads a corpus file.
@@ -147,7 +159,10 @@ func runVector(v Vector) Result {
 		expr := result.Expression
 		r.Expression = &expr
 		r.Missing = append([]string(nil), result.MissingRoles...)
-		r.Note = fmt.Sprintf("expression=%v missing=%v", result.Expression, result.MissingRoles)
+		sat := result.Satisfaction()
+		r.SatisfactionVerdict = string(sat.Verdict)
+		r.SatisfactionReason = sat.Reason
+		r.Note = fmt.Sprintf("expression=%v missing=%v satisfaction=%s/%s", result.Expression, result.MissingRoles, sat.Verdict, sat.Reason)
 	case "action_id":
 		id, err := semantics.ComputeActionID(
 			semantics.ActionTypeDefinition{Type: v.ActionType.Type, MaterialFields: v.ActionType.MaterialFields},
@@ -194,6 +209,14 @@ func resultMatches(v Vector, r Result) bool {
 	if v.Expect.ActionId != "" {
 		return r.Got == v.Expect.ActionId
 	}
+	if v.Expect.Satisfaction != nil {
+		if r.SatisfactionVerdict != v.Expect.Satisfaction.Verdict {
+			return false
+		}
+		if v.Expect.Satisfaction.Reason != "" && r.SatisfactionReason != v.Expect.Satisfaction.Reason {
+			return false
+		}
+	}
 	if !strings.HasPrefix(r.Got, v.Expect.Verdict) {
 		return false
 	}
@@ -220,6 +243,12 @@ func resultMatches(v Vector, r Result) bool {
 func (v Vector) expectLabel() string {
 	if v.Expect.ActionId != "" {
 		return v.Expect.ActionId
+	}
+	if v.Expect.Satisfaction != nil {
+		if v.Expect.Satisfaction.Reason != "" {
+			return v.Expect.Satisfaction.Verdict + "/" + v.Expect.Satisfaction.Reason
+		}
+		return v.Expect.Satisfaction.Verdict
 	}
 	if v.Expect.Error != "" {
 		return "error:" + v.Expect.Error
