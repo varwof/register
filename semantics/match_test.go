@@ -73,13 +73,10 @@ func TestComputeActionIDMaterialProjection(t *testing.T) {
 		t.Error("an undeclared field leaked into the material projection")
 	}
 
-	// A different suite is a different identity over the same content.
-	sha384, err := ComputeActionID(def, SuiteJCSSHA384, paymentAction("100.00", "USD", nil))
-	if err != nil {
-		t.Fatalf("ComputeActionID: %v", err)
-	}
-	if sha384.Suite != SuiteJCSSHA384 || string(sha384.Digest.Value) == string(plain.Digest.Value) {
-		t.Error("the suite did not change the identity")
+	// The suite set is closed: v1 defines jcs-sha256 only, so naming another
+	// suite is a refusal rather than a computation.
+	if _, err := ComputeActionID(def, ActionIdSuite("cbor-sha256"), paymentAction("100.00", "USD", nil)); !errors.Is(err, ErrActionSuite) {
+		t.Errorf("an undefined suite was accepted: %v", err)
 	}
 }
 
@@ -124,7 +121,7 @@ func TestActionIdStringRoundTrip(t *testing.T) {
 		t.Fatalf("ComputeActionID: %v", err)
 	}
 	s := id.String()
-	if !strings.HasPrefix(s, "caid:1:payment.release.1:jcs-sha256:") {
+	if !strings.HasPrefix(s, "clc-action:1:payment.release.1:jcs-sha256:") {
 		t.Fatalf("identifier = %q", s)
 	}
 	back, err := ParseActionId(s)
@@ -137,10 +134,12 @@ func TestActionIdStringRoundTrip(t *testing.T) {
 
 	for _, bad := range []string{
 		"",
-		"caid:2:payment.release.1:jcs-sha256:AAAA",
-		"caid:1:payment.release.1:jcs-md5:AAAA",
-		"caid:1::jcs-sha256:AAAA",
-		"caid:1:payment.release.1:jcs-sha256:not base64!",
+		"clc-action:2:payment.release.1:jcs-sha256:AAAA",
+		"clc-action:1:payment.release.1:jcs-md5:AAAA",
+		"clc-action:1::jcs-sha256:AAAA",
+		"clc-action:1:payment.release.1:jcs-sha256:not base64!",
+		// The CAID namespace is not ours to claim.
+		"caid:1:payment.release.1:jcs-sha256:AAAA",
 		"payment.release.1",
 	} {
 		if _, err := ParseActionId(bad); err == nil {
@@ -159,7 +158,6 @@ func TestMatchVerdicts(t *testing.T) {
 	}
 	same, _ := ComputeActionID(def, SuiteJCSSHA256, paymentAction("100.00", "USD", map[string]any{"memo": "ignored"}))
 	other, _ := ComputeActionID(def, SuiteJCSSHA256, paymentAction("100.01", "USD", nil))
-	sha384, _ := ComputeActionID(def, SuiteJCSSHA384, paymentAction("100.00", "USD", nil))
 	otherType, _ := ComputeActionID(ActionTypeDefinition{Type: "payment.refund.1", MaterialFields: []string{"amount", "currency"}},
 		SuiteJCSSHA256, paymentAction("100.00", "USD", nil))
 
@@ -171,7 +169,6 @@ func TestMatchVerdicts(t *testing.T) {
 	}{
 		{"identical", base, same, MatchExact},
 		{"different amount", base, other, MatchNotEquivalent},
-		{"different suite", base, sha384, MatchIndeterminate},
 		{"different action type", base, otherType, MatchIndeterminate},
 		{"unusable observed", ActionId{}, base, MatchIndeterminate},
 		{"unusable evidence", base, ActionId{}, MatchIndeterminate},

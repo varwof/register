@@ -16,7 +16,13 @@
 //     coverage is never inferred, defaulted or repaired (§4.2);
 //   - the digest is taken over the JCS canonical serialization of the material
 //     projection, and the suite names the algorithm (§4.3), e.g.
-//     `caid:1:payment.release.1:jcs-sha256:<b64url>`.
+//     `clc-action:1:payment.release.1:jcs-sha256:<b64url>`.
+//
+// The identifier is the language's own projection identity, not a CAID.  A CAID
+// covers the complete Action Object under its own suite registry, and identifies
+// the action object, not an occurrence; this projection covers only the declared
+// material set.  The two are related by a relying-party-pinned Action-Mapping
+// Profile, never by assuming they are the same string.
 //
 // Matching is content correlation only: it validates no signature and
 // authorizes nothing.  Comparison across suites or action types is not a
@@ -27,7 +33,6 @@ package semantics
 
 import (
 	"crypto/sha256"
-	"crypto/sha512"
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
@@ -40,14 +45,13 @@ import (
 type ActionIdSuite string
 
 const (
-	// SuiteJCSSHA256 is JCS canonicalization over SHA-256, the v1 default.
+	// SuiteJCSSHA256 is JCS canonicalization over SHA-256; it is the only suite
+	// defined in v1.  A name outside the set is a refusal, never a computation.
 	SuiteJCSSHA256 ActionIdSuite = "jcs-sha256"
-	// SuiteJCSSHA384 is the same projection under SHA-384.
-	SuiteJCSSHA384 ActionIdSuite = "jcs-sha384"
 )
 
 // actionIdPrefix is the version tag of the identifier string form.
-const actionIdPrefix = "caid:1"
+const actionIdPrefix = "clc-action:1"
 
 var (
 	// ErrActionShape means the action, its type definition, or an identifier
@@ -95,14 +99,16 @@ func (d ActionTypeDefinition) Validate() error {
 	return nil
 }
 
-// ActionId is a typed, suite-tagged content identity for one exact action.
+// ActionId is a typed, suite-tagged content identity for the material content of
+// one action.  It is not an occurrence identifier: an occurrence needs a
+// discriminator supplied by the effect boundary (§6.4).
 type ActionId struct {
 	Type   string
 	Suite  ActionIdSuite
 	Digest Digest
 }
 
-// String renders the identifier form: caid:1:<type>:<suite>:<digest-b64url>.
+// String renders the identifier form: clc-action:1:<type>:<suite>:<digest-b64url>.
 func (a ActionId) String() string {
 	return fmt.Sprintf("%s:%s:%s:%s", actionIdPrefix, a.Type, a.Suite,
 		base64.RawURLEncoding.EncodeToString(a.Digest.Value))
@@ -124,7 +130,7 @@ func (a ActionId) Validate() error {
 
 func (s ActionIdSuite) valid() bool {
 	switch s {
-	case SuiteJCSSHA256, SuiteJCSSHA384:
+	case SuiteJCSSHA256:
 		return true
 	}
 	return false
@@ -133,7 +139,7 @@ func (s ActionIdSuite) valid() bool {
 // ParseActionId parses the string form.
 func ParseActionId(s string) (ActionId, error) {
 	parts := strings.Split(s, ":")
-	if len(parts) != 5 || parts[0] != "caid" || parts[1] != "1" {
+	if len(parts) != 5 || parts[0] != "clc-action" || parts[1] != "1" {
 		return ActionId{}, fmt.Errorf("%w: %q", ErrActionShape, s)
 	}
 	raw, err := base64.RawURLEncoding.DecodeString(parts[4])
@@ -148,12 +154,10 @@ func ParseActionId(s string) (ActionId, error) {
 }
 
 func digestAlgOf(suite ActionIdSuite) string {
-	switch suite {
-	case SuiteJCSSHA384:
-		return "sha-384"
-	default:
+	if suite == SuiteJCSSHA256 {
 		return DigestAlgSHA256
 	}
+	return ""
 }
 
 // ComputeActionID projects the action onto the type's material field set and
@@ -245,7 +249,7 @@ func Match(observed, evidence ActionId) MatchVerdict {
 		return MatchIndeterminate
 	}
 	if observed.Type != evidence.Type || observed.Suite != evidence.Suite {
-		// Cross-suite or cross-type comparison is a mapping problem, not an
+		// Cross-type or cross-suite comparison is a mapping problem, not an
 		// inequality.
 		return MatchIndeterminate
 	}
@@ -257,7 +261,8 @@ func Match(observed, evidence ActionId) MatchVerdict {
 
 // ActionMappingProfile names a projection by its content hash and is pinned by
 // the relying party (§6.4).  The Canonical Action Identifier draft describes the
-// same construct; that draft is cited here rather than reproduced.  A profile
+// constructs the bridge to and from a CAID, which covers the complete Action
+// Object rather than this projection; the draft is cited here, not reproduced.  A profile
 // without a usable digest cannot be pinned, and an unpinned profile establishes
 // nothing.
 type ActionMappingProfile struct {
@@ -293,10 +298,6 @@ func MapAndMatch(profile ActionMappingProfile, projector ActionProjector, eviden
 }
 
 func hashFor(suite ActionIdSuite, canonical []byte) []byte {
-	if suite == SuiteJCSSHA384 {
-		sum := sha512.Sum384(canonical)
-		return sum[:]
-	}
 	sum := sha256.Sum256(canonical)
 	return sum[:]
 }

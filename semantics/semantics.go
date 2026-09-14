@@ -229,7 +229,12 @@ func paramsDepth(v any, depth int) int {
 // (rev CLC-1.3 · 2026-09-12: CLC-1.3 is additive — `allow_unresolved`
 // verdict + §9.3 identity/aggregation clarifications — so CLC-1.2/1.1
 // inputs still read fine.)
-const CLCRevision = "CLC-1.4"
+// (rev CLC-1.5 · 2026-09-14: the instance identity is the language's own
+// projection form `clc-action:1:…` instead of a `caid:` claim, the v1 suite
+// set is `jcs-sha256` only, §10 states that a top-level `unknown` yields
+// UNSATISFIED, §11 separates `allow_unresolved` from evidence, and §12 keeps
+// delegation containment out of the language.  CLC-1.4 inputs still read.)
+const CLCRevision = "CLC-1.5"
 
 const (
 	// maxParamsSerializedBytes bounds the JCS-serialized params size
