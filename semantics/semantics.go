@@ -291,6 +291,11 @@ func parseRevision(rev string) (major, minor int, ok bool) {
 // duplicate keys, then number shape.  Malformed input and a non-object
 // params value fall into invalid_params_number.
 func ValidateRawParams(raw string) error {
+	// A lone surrogate escape is malformed Unicode, not a value to repair; the
+	// decoder would substitute U+FFFD, so it is refused here, before decoding.
+	if err := scanRawUnicodeEscapes(raw); err != nil {
+		return fmt.Errorf("%w: %v", ErrInvalidParamsNumber, err)
+	}
 	trimmed := strings.TrimSpace(raw)
 	if trimmed == "" || !strings.HasPrefix(trimmed, "{") {
 		return ErrInvalidParamsNumber

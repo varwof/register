@@ -200,3 +200,29 @@ func hex32(sum [32]byte) string {
 	}
 	return string(out)
 }
+
+// The raw path is where a lone surrogate escape can still be seen: the decoder
+// substitutes U+FFFD, so the scan runs before it.
+func TestScanRawUnicodeEscapes(t *testing.T) {
+	cases := []struct {
+		name string
+		raw  string
+		ok   bool
+	}{
+		{"pair", `{"s":"\ud83d\ude02"}`, true},
+		{"lone high", `{"s":"\ud800"}`, false},
+		{"lone low", `{"s":"\udc00"}`, false},
+		{"high then bmp escape", `{"s":"\ud800\u0041"}`, false},
+		{"escaped backslash", `{"s":"\\ud800"}`, true},
+		{"plain string", `{"s":"ok"}`, true},
+	}
+	for _, tc := range cases {
+		err := scanRawUnicodeEscapes(tc.raw)
+		if tc.ok && err != nil {
+			t.Errorf("%s: got %v, want nil", tc.name, err)
+		}
+		if !tc.ok && err == nil {
+			t.Errorf("%s: got nil, want a refusal", tc.name)
+		}
+	}
+}

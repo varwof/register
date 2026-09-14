@@ -22,6 +22,10 @@ func TestValidateRawParams(t *testing.T) {
 		{"notobject", `[1,2]`, ErrInvalidParamsNumber},
 		{"empty", ``, ErrInvalidParamsNumber},
 		{"nan_junk", `{"x": tru}`, ErrInvalidParamsNumber},
+		{"lone_high_surrogate", `{"s":"\ud800"}`, ErrInvalidParamsNumber},
+		{"lone_low_surrogate", `{"s":"\udc00"}`, ErrInvalidParamsNumber},
+		{"surrogate_pair_ok", `{"s":"\ud83d\ude02"}`, nil},
+		{"escaped_backslash_ok", `{"s":"\\ud800"}`, nil},
 	}
 	for _, c := range cases {
 		err := ValidateRawParams(c.raw)

@@ -176,6 +176,79 @@ var (
 	textMarshalerType = reflect.TypeOf((*encoding.TextMarshaler)(nil)).Elem()
 )
 
+// scanRawUnicodeEscapes refuses lone surrogate escapes in raw JSON text.
+//
+// The decoded path cannot enforce this: encoding/json substitutes U+FFFD for a
+// lone surrogate escape before any checker sees the value, so the raw text is
+// the only place the distinction still exists.  RFC 8785 requires such input to
+// be refused, never repaired.
+func scanRawUnicodeEscapes(raw string) error {
+	inString := false
+	for i := 0; i < len(raw); i++ {
+		c := raw[i]
+		if !inString {
+			if c == '"' {
+				inString = true
+			}
+			continue
+		}
+		switch c {
+		case '"':
+			inString = false
+		case '\\':
+			if i+1 >= len(raw) {
+				return nil // truncated escape: the decoder reports it
+			}
+			if raw[i+1] != 'u' {
+				i++ // simple escape: step over the escaped character
+				continue
+			}
+			hi, ok := hex4At(raw, i+2)
+			if !ok {
+				return nil // malformed escape: the decoder reports it
+			}
+			switch {
+			case hi >= 0xDC00 && hi <= 0xDFFF:
+				return fmt.Errorf("%w: lone low surrogate escape", ErrCanonicalSurrogate)
+			case hi >= 0xD800 && hi <= 0xDBFF:
+				if i+12 > len(raw) || raw[i+6] != '\\' || raw[i+7] != 'u' {
+					return fmt.Errorf("%w: high surrogate escape without a low surrogate", ErrCanonicalSurrogate)
+				}
+				lo, ok := hex4At(raw, i+8)
+				if !ok || lo < 0xDC00 || lo > 0xDFFF {
+					return fmt.Errorf("%w: high surrogate escape not followed by a low surrogate", ErrCanonicalSurrogate)
+				}
+				i += 11 // consume the pair; the loop's i++ lands past it
+			default:
+				i += 5
+			}
+		}
+	}
+	return nil
+}
+
+// hex4At decodes four hex digits at off.
+func hex4At(s string, off int) (int, bool) {
+	if off+4 > len(s) {
+		return 0, false
+	}
+	v := 0
+	for _, c := range []byte(s[off : off+4]) {
+		v <<= 4
+		switch {
+		case c >= '0' && c <= '9':
+			v |= int(c - '0')
+		case c >= 'a' && c <= 'f':
+			v |= int(c-'a') + 10
+		case c >= 'A' && c <= 'F':
+			v |= int(c-'A') + 10
+		default:
+			return 0, false
+		}
+	}
+	return v, true
+}
+
 // checkCanonicalString refuses invalid UTF-8 and lone surrogates.  A lone
 // surrogate cannot be represented as a valid UTF-8 sequence (Go's string(rune)
 // would itself substitute U+FFFD), so the two cases are distinguished by the
