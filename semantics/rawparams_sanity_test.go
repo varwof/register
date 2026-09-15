@@ -1,6 +1,7 @@
 package semantics
 
 import (
+	"encoding/json"
 	"fmt"
 	"testing"
 )
@@ -198,4 +199,41 @@ func repeatClose(n int) string {
 		s += `}`
 	}
 	return s
+}
+
+// TestAuthorizeJSONTextIsTheNormativeEntry pins §6.2 item 7: the text entry
+// point refuses malformed Unicode that a decoded value can no longer express,
+// and it agrees with the decoded path on everything a decoder preserves.
+func TestAuthorizeJSONTextIsTheNormativeEntry(t *testing.T) {
+	id := "std/database-v1:query:SELECT"
+	grants := []Grant{{ID: id}}
+
+	// A lone surrogate escape and a literal invalid octet are refused on the
+	// text path; both decode to U+FFFD, which the decoded path accepts.
+	refused := []string{
+		`{"s":"\ud800"}`,
+		"{\"s\":\"\xff\"}",
+	}
+	for _, raw := range refused {
+		d := AuthorizeJSONText(grants, id, raw)
+		if d.Verdict != VerdictDeny || canonicalReason(d.Reason) != "invalid_params_number" {
+			t.Errorf("AuthorizeJSONText(%q) = %+v, want deny invalid_params_number", raw, d)
+		}
+		var decoded map[string]any
+		if err := json.Unmarshal([]byte(raw), &decoded); err != nil {
+			t.Fatalf("Unmarshal(%q): %v", raw, err)
+		}
+		if got := AuthorizeSet(grants, Operation{ID: id, Params: decoded}); got.Verdict != VerdictAllow {
+			t.Errorf("decoded %q = %+v, want allow (the repair is lossy, §6.2 item 7)", raw, got)
+		}
+	}
+
+	// A legitimate U+FFFD is legal text and is accepted on both paths.
+	ok := `{"s":"\ufffd"}`
+	if got := AuthorizeJSONText(grants, id, ok); got.Verdict != VerdictAllow {
+		t.Errorf("AuthorizeJSONText(%q) = %+v, want allow", ok, got)
+	}
+	if got := AuthorizeJSONText(grants, id, ""); got.Verdict != VerdictAllow {
+		t.Errorf("AuthorizeJSONText(no params) = %+v, want allow", got)
+	}
 }

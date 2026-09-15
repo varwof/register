@@ -1011,7 +1011,40 @@ func Authorize(effectiveGrant Grant, op Operation) Decision {
 	return AuthorizeSet([]Grant{effectiveGrant}, op)
 }
 
-// AuthorizeSet evaluates the §9.3 multi-grant aggregation (rev CLC-1.3):
+// AuthorizeJSONText is the normative entry point for a caller that holds the
+// operation's params as JSON text: it runs the §6.2 input-boundary checks on
+// that text and evaluates the operation in one call.  rawParams may be empty
+// for an operation that carries no params.
+//
+// Prefer this over decoding the text and calling AuthorizeSet.  A decode is
+// lossy for exactly the inputs §6.2 refuses — a general-purpose JSON decoder
+// replaces a lone surrogate escape and an invalid UTF-8 octet with U+FFFD, and
+// the value that then reaches the decision function is indistinguishable from
+// a legitimate U+FFFD, so the refusal cannot be recovered (§6.2 item 7).  A
+// refusal is reported as deny with the §6.2 reason code.
+func AuthorizeJSONText(grants []Grant, opID, rawParams string) Decision {
+	var params map[string]any
+	if rawParams != "" {
+		if err := ValidateRawParams(rawParams); err != nil {
+			return Decision{Verdict: VerdictDeny, Reason: err.Error()}
+		}
+		if err := json.Unmarshal([]byte(rawParams), &params); err != nil {
+			return Decision{Verdict: VerdictDeny, Reason: ErrInvalidParamsNumber.Error()}
+		}
+	}
+	return AuthorizeSet(grants, Operation{ID: opID, Params: params})
+}
+
+// AuthorizeSet evaluates the §9.3 multi-grant aggregation (rev CLC-1.3).
+//
+// The caller must have run the §6.2 input-boundary checks on the text it
+// received, if it received text.  A params value handed straight to this
+// function cannot carry the information those checks use: a decoder replaces a
+// lone surrogate escape and an invalid UTF-8 octet with U+FFFD, so the value
+// seen here is indistinguishable from a legitimate U+FFFD (§6.2 item 7).  A
+// caller holding the raw text should call AuthorizeJSONText instead.
+//
+// The rest of the contract:
 //   - grants all absent/empty → deny capability_not_authorized (resolved
 //     before any layer check, per §9.3 pre-check);
 //   - otherwise operation layer-1 validation runs first, exactly as the
