@@ -14,6 +14,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 )
 
 // Grant represents a principal's authorization of a capability.
@@ -197,7 +198,24 @@ func validateObjectParams(params map[string]any) error {
 	if paramsDepth(params, 1) > maxParamsNesting {
 		return ErrInvalidParamsSize
 	}
-	if b, err := CanonicalJSON(params); err == nil && len(b) > maxParamsSerializedBytes {
+	b, err := CanonicalJSON(params)
+	if err != nil {
+		// Invalid UTF-8, a lone surrogate or an unrepresentable number has
+		// no JCS encoding: refuse it at the boundary with the same stable
+		// denial (invalid_params_number) the raw path returns, rather than
+		// silently repairing it into a different value.  A size count over
+		// repaired bytes would also be wrong.  NaN/±Inf reach here as a
+		// generic encoder error; it still reads as invalid_params_number.
+		switch {
+		case errors.Is(err, ErrCanonicalInvalidUTF8),
+			errors.Is(err, ErrCanonicalSurrogate),
+			errors.Is(err, ErrCanonicalNumber):
+			return fmt.Errorf("%w: %v", ErrInvalidParamsNumber, err)
+		default:
+			return ErrInvalidParamsNumber
+		}
+	}
+	if len(b) > maxParamsSerializedBytes {
 		return ErrInvalidParamsSize
 	}
 	return nil
@@ -234,15 +252,22 @@ func paramsDepth(v any, depth int) int {
 // set is `jcs-sha256` only, §10 states that a top-level `unknown` yields
 // UNSATISFIED, §11 separates `allow_unresolved` from evidence, and §12 keeps
 // delegation containment out of the language.  CLC-1.4 inputs still read.)
-// (rev CLC-1.6 · 2026-09-14: `jcs-sha256` is a real RFC 8785 implementation.
+// (rev CLC-1.7 · 2026-09-15: the decoded parameter paths return the same stable denial
+// for malformed Unicode as the raw path, and the decoded size check measures the JCS
+// serialization.  CLC-1.6 · 2026-09-14: `jcs-sha256` is a real RFC 8785 implementation.
 // Go's json.Marshal HTML-escaped `&`/`<`/`>` and ordered keys by UTF-8 bytes,
 // so identifiers and input digests over such material were not JCS and
 // disagreed across implementations.  CanonicalJSON now sorts object members by
 // UTF-16 code units, escapes strings per §3.2.2.2, renders numbers per
-// ECMAScript Number::toString, and refuses invalid UTF-8.  The bytes change for
-// `&`/`<`/`>` material — a compatibility note for stored digests — while
-// CLC-1.4/1.5 inputs still read.)
-const CLCRevision = "CLC-1.6"
+// ECMAScript Number::toString, and refuses invalid UTF-8.  The decoded params
+// path refuses malformed Unicode (lone surrogates / invalid UTF-8) with
+// invalid_params_number and counts the §6.2 size in JCS bytes, not a
+// deserializer's re-encoding.  The raw params path counts the same JCS-form
+// octets (writeCanonicalString), so the raw and decoded limits agree —
+// json.Marshal would over-count `&`/`<`/`>` and U+2028/U+2029.  The bytes
+// change for `&`/`<`/`>` material — a
+// compatibility note for stored digests — while CLC-1.4/1.5 inputs still read.)
+const CLCRevision = "CLC-1.7"
 
 const (
 	// maxParamsSerializedBytes bounds the JCS-serialized params size
@@ -295,6 +320,13 @@ func ValidateRawParams(raw string) error {
 	// decoder would substitute U+FFFD, so it is refused here, before decoding.
 	if err := scanRawUnicodeEscapes(raw); err != nil {
 		return fmt.Errorf("%w: %v", ErrInvalidParamsNumber, err)
+	}
+	// Literal invalid UTF-8 bytes (inside a string literal or elsewhere in the
+	// text) are equally malformed: encoding/json would pass string bytes
+	// through and json.Marshal would silently repair them to U+FFFD.  Refuse
+	// before any serialization so the canonicalizer and the validator agree.
+	if !utf8.ValidString(raw) {
+		return fmt.Errorf("%w: invalid UTF-8 bytes in raw text", ErrInvalidParamsNumber)
 	}
 	trimmed := strings.TrimSpace(raw)
 	if trimmed == "" || !strings.HasPrefix(trimmed, "{") {
@@ -362,11 +394,13 @@ func walkParamsValue(dec *json.Decoder, buf *bytes.Buffer, depth int, dupErr, nu
 					buf.WriteByte(',')
 				}
 				first = false
-				kb, err := json.Marshal(key)
-				if err != nil {
-					return err
-				}
-				buf.Write(kb)
+				// Keys and string values are counted in their JCS form
+				// (§3.2.2.2): `"`/`\` and the control shortcuts escape as two
+				// octets, other controls as `\u00xx` (six), `&`/`<`/`>` and
+				// non-ASCII stay raw.  json.Marshal would HTML-escape `&`/`<`/`>`
+				// and re-escape U+2028/U+2029, inflating the size; CanonicalJSON's
+				// writer is byte-exact, so the raw and decoded limits agree.
+				writeCanonicalString(buf, key)
 				buf.WriteByte(':')
 				if err := walkParamsValue(dec, buf, depth+1, dupErr, numErr); err != nil {
 					return err
@@ -429,11 +463,8 @@ func walkParamsValue(dec *json.Decoder, buf *bytes.Buffer, depth int, dupErr, nu
 		buf.Write(kb)
 		return nil
 	case string:
-		kb, err := json.Marshal(t)
-		if err != nil {
-			return err
-		}
-		buf.Write(kb)
+		// JCS form octet count (§3.2.2.2) — see the key comment above.
+		writeCanonicalString(buf, t)
 		return nil
 	case bool:
 		if t {
