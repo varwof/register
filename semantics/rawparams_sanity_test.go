@@ -114,6 +114,7 @@ func TestRevisionCompatible(t *testing.T) {
 		{"CLC-1.5", true},
 		{"CLC-1.6", true},
 		{"CLC-1.7", true},
+		{"CLC-1.8", true},
 		{"CLC-2.0", false},
 		{"CLC-0.9", false},
 		{"x-1.0", false},
@@ -126,8 +127,8 @@ func TestRevisionCompatible(t *testing.T) {
 			t.Errorf("RevisionCompatible(%q) = %v, want %v", c.rev, got, c.want)
 		}
 	}
-	if CLCRevision != "CLC-1.7" {
-		t.Errorf("CLCRevision = %q, want CLC-1.7", CLCRevision)
+	if CLCRevision != "CLC-1.8" {
+		t.Errorf("CLCRevision = %q, want CLC-1.8", CLCRevision)
 	}
 }
 

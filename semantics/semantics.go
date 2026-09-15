@@ -267,7 +267,7 @@ func paramsDepth(v any, depth int) int {
 // json.Marshal would over-count `&`/`<`/`>` and U+2028/U+2029.  The bytes
 // change for `&`/`<`/`>` material — a
 // compatibility note for stored digests — while CLC-1.4/1.5 inputs still read.)
-const CLCRevision = "CLC-1.7"
+const CLCRevision = "CLC-1.8"
 
 const (
 	// maxParamsSerializedBytes bounds the JCS-serialized params size
@@ -448,6 +448,19 @@ func walkParamsValue(dec *json.Decoder, buf *bytes.Buffer, depth int, dupErr, nu
 				*numErr = fmt.Errorf("%w: %s", ErrInvalidParamsNumber, string(t))
 			}
 		}
+		// §6.2 step 4 measures the JCS form, and JCS rewrites the token:
+		// 1e-6 becomes 0.000001 and 1.0 becomes 1.  The received spelling
+		// still drives the precision check above.
+		if n, err := t.Float64(); err == nil && isFinite(n) {
+			canonical, err := CanonicalJSON(n)
+			if err != nil {
+				return err
+			}
+			buf.Write(canonical)
+			return nil
+		}
+		// A non-finite token has no JCS form.  Keep the received spelling so
+		// malformed numbers still report the size code before the number code.
 		buf.WriteString(string(t))
 		return nil
 	case float64:
