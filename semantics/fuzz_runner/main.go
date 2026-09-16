@@ -46,12 +46,12 @@ func canonicalReason(s string) string {
 }
 
 type result struct {
-	ID      string              `json:"id"`
-	Impl    string              `json:"impl"`
-	RawPath *pathResult         `json:"raw_path,omitempty"`
-	DecPath *pathResult         `json:"decoded_path,omitempty"`
-	Sha     string              `json:"canonical_sha256,omitempty"`
-	Err     string              `json:"error,omitempty"`
+	ID      string      `json:"id"`
+	Impl    string      `json:"impl"`
+	RawPath *pathResult `json:"raw_path,omitempty"`
+	DecPath *pathResult `json:"decoded_path,omitempty"`
+	Sha     string      `json:"canonical_sha256,omitempty"`
+	Err     string      `json:"error,omitempty"`
 }
 
 type pathResult struct {
@@ -61,15 +61,15 @@ type pathResult struct {
 }
 
 type fuzzCase struct {
-	ID      string           `json:"id"`
-	Axis    string           `json:"axis"`
-	Raw     string           `json:"raw"`
-	OpID    string           `json:"op_id"`
-	Grant   semantics.Grant  `json:"grant"`
+	ID      string            `json:"id"`
+	Axis    string            `json:"axis"`
+	Raw     string            `json:"raw"`
+	OpID    string            `json:"op_id"`
+	Grant   semantics.Grant   `json:"grant"`
 	Grants  []semantics.Grant `json:"grants"`
-	NoParam bool             `json:"no_params"`
-	RawB64  string           `json:"raw_b64"`
-	Note    string           `json:"note"`
+	NoParam bool              `json:"no_params"`
+	RawB64  string            `json:"raw_b64"`
+	Note    string            `json:"note"`
 }
 
 func effectiveGrants(c fuzzCase) []semantics.Grant {
