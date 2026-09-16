@@ -45,7 +45,7 @@ func TestFlatParamValueValidation(t *testing.T) {
 // cannot be omitted from the claim.
 func TestRequiredParamMissing(t *testing.T) {
 	reg := NewRegistry()
-	reg.Register(&SchemeDefinition{
+	if err := reg.Register(&SchemeDefinition{
 		SchemeID: "x/acme", Name: "acme", Version: "1.0.0",
 		Vendor: "x", Product: "acme",
 		Capabilities: []CapabilityEntry{{
@@ -54,7 +54,9 @@ func TestRequiredParamMissing(t *testing.T) {
 				"threshold": {Type: "int", Min: 1.0, Required: true},
 			},
 		}},
-	})
+	}); err != nil {
+		t.Fatalf("register: %v", err)
+	}
 	res := reg.ValidateClaims([]CapabilityClaim{
 		{SchemeID: "x/acme", Capability: "order:approve", Parameters: map[string]any{}},
 	})

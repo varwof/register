@@ -56,7 +56,10 @@ func main() {
 	}
 	reg := register.NewRegistry()
 	for _, def := range schemes {
-		reg.Register(def)
+		if err := reg.Register(def); err != nil {
+			fmt.Fprintf(os.Stderr, "Error registering scheme: %v\n", err)
+			os.Exit(1)
+		}
 	}
 
 	var grantedPatterns []string

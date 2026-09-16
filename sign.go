@@ -84,10 +84,12 @@ func VerifyCapabilityPKCS7(capPath string, trustRoots []*x509.Certificate) error
 }
 
 // VerifyCapabilityPKCS7Cert verifies a capability JSON against its .p7s
-// signature and returns the SIGNER certificate.  Callers that must bind the
-// published content to the signer's own authority (e.g. ruleexec, which
-// requires the rule capability to be covered by the signer's AIC grant) use
-// this variant; plain verification can use VerifyCapabilityPKCS7.
+// signature and returns the SIGNER certificate.  Verification always requires
+// at least one trust root: signing without roots is refused because the signer
+// certificate is recovered from the blob itself and is therefore
+// attacker-pickable.  Callers that must bind the published content to the
+// signer's own authority (e.g. ruleexec, which requires the rule capability to
+// be covered by the signer's AIC grant) use this variant.
 func VerifyCapabilityPKCS7Cert(capPath string, trustRoots []*x509.Certificate) (*x509.Certificate, error) {
 	sigPath := capPath + ".p7s"
 	capData, err := os.ReadFile(capPath)
@@ -111,19 +113,22 @@ func VerifyCapabilityPKCS7Cert(capPath string, trustRoots []*x509.Certificate) (
 		return nil, fmt.Errorf("PKCS#7 verify: %w", err)
 	}
 
-	// verify certificate chain
-	if len(trustRoots) > 0 {
-		roots := x509.NewCertPool()
-		for _, root := range trustRoots {
-			roots.AddCert(root)
-		}
-		opts := x509.VerifyOptions{
-			Roots:     roots,
-			KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageCodeSigning},
-		}
-		if _, err := signerCert.Verify(opts); err != nil {
-			return nil, fmt.Errorf("certificate chain verify: %w", err)
-		}
+	// certificate chain verification is mandatory (fail closed): without a
+	// trusted root the signature is only bound to an attacker-pickable
+	// certificate recovered from the blob itself, so refuse to verify at all.
+	if len(trustRoots) == 0 {
+		return nil, fmt.Errorf("signature verification requires at least one trust root (use -CA / LoadTrustRoots)")
+	}
+	roots := x509.NewCertPool()
+	for _, root := range trustRoots {
+		roots.AddCert(root)
+	}
+	opts := x509.VerifyOptions{
+		Roots:     roots,
+		KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageCodeSigning},
+	}
+	if _, err := signerCert.Verify(opts); err != nil {
+		return nil, fmt.Errorf("certificate chain verify: %w", err)
 	}
 
 	return signerCert, nil

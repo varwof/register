@@ -36,11 +36,17 @@ var ruleVersionRe = regexp.MustCompile(`^v([0-9]+)\.([0-9]+)\.json$`)
 //
 //	rulesDir/<scheme>/v<maj>.<min>.json
 //
-// Each rule is validated (structure) and PKCS#7 signed. default.json
-// is published as a byte-identical copy of the highest minor version,
-// so its .p7s detached signature stays valid without re-signing.
-// certPath/keyPath are the signer certificate/key (PEM).
-func PublishRules(rulesDir, outDir, certPath, keyPath string) (*PublishManifest, error) {
+// Each rule is validated against the registry's parameter contract
+// (Rule.Validate, the same check the claims path uses -- not just
+// structure) and PKCS#7 signed. default.json is published as a
+// byte-identical copy of the highest minor version, so its .p7s
+// detached signature stays valid without re-signing.
+// certPath/keyPath are the signer certificate/key (PEM); reg supplies
+// the scheme definitions the rule must satisfy (fail closed, never nil).
+func PublishRules(rulesDir, outDir, certPath, keyPath string, reg *register.Registry) (*PublishManifest, error) {
+	if reg == nil {
+		return nil, fmt.Errorf("publish: registry is required (Rule.Validate must fail closed)")
+	}
 	m := &PublishManifest{Schemes: map[string]SchemePublish{}}
 
 	// Collect versions grouped by scheme. The layout follows the
@@ -92,7 +98,7 @@ func PublishRules(rulesDir, outDir, certPath, keyPath string) (*PublishManifest,
 		var files []string
 		for _, ver := range versions {
 			name := fmt.Sprintf("v%d.%d.json", ver.Major, ver.Minor)
-			if err := copyAndSign(filepath.Join(src, name), filepath.Join(dst, name), certPath, keyPath); err != nil {
+			if err := copyAndSign(filepath.Join(src, name), filepath.Join(dst, name), certPath, keyPath, reg); err != nil {
 				return nil, err
 			}
 			files = append(files, name)
@@ -100,7 +106,7 @@ func PublishRules(rulesDir, outDir, certPath, keyPath string) (*PublishManifest,
 		latest := files[len(files)-1]
 		// default.json = byte-identical copy of the latest compatible
 		// (highest minor) version.
-		if err := copyAndSign(filepath.Join(src, latest), filepath.Join(dst, "default.json"), certPath, keyPath); err != nil {
+		if err := copyAndSign(filepath.Join(src, latest), filepath.Join(dst, "default.json"), certPath, keyPath, reg); err != nil {
 			return nil, err
 		}
 		m.Schemes[scheme] = SchemePublish{Latest: latest, Files: files}
@@ -131,7 +137,7 @@ func listRuleVersions(dir string) ([]RuleVersion, error) {
 
 // copyAndSign copies a rule file (byte-identical) and signs it with
 // PKCS#7 detached signature (register.SignCapability).
-func copyAndSign(src, dst, certPath, keyPath string) error {
+func copyAndSign(src, dst, certPath, keyPath string, reg *register.Registry) error {
 	data, err := os.ReadFile(src)
 	if err != nil {
 		return err
@@ -141,6 +147,9 @@ func copyAndSign(src, dst, certPath, keyPath string) error {
 		return fmt.Errorf("rule %s: %w", src, err)
 	}
 	if err := ValidateStructure(rule); err != nil {
+		return fmt.Errorf("rule %s: %w", src, err)
+	}
+	if err := rule.Validate(reg); err != nil {
 		return fmt.Errorf("rule %s: %w", src, err)
 	}
 	if err := os.WriteFile(dst, data, 0o644); err != nil {

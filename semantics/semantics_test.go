@@ -67,6 +67,19 @@ func TestParamsSubset(t *testing.T) {
 		{"array exceeds", map[string]any{"tables": []any{"a", "b"}}, map[string]any{"tables": []any{"a"}}, false},
 		{"unconstrained grant", nil, nil, true},
 		{"bounded grant, missing op", nil, map[string]any{"limit": float64(100)}, false},
+		// R16 (audit 2026-09-16): key closure applies recursively inside
+		// nested objects — an op key that the grant's nested object does not
+		// declare is undeclared_param, exactly like the top level.
+		{"nested equal", map[string]any{"cfg": map[string]any{"a": float64(1)}}, map[string]any{"cfg": map[string]any{"a": float64(1)}}, true},
+		{"nested op keeps declared keys", map[string]any{"cfg": map[string]any{"a": float64(1), "b": float64(2)}}, map[string]any{"cfg": map[string]any{"a": float64(1), "b": float64(2)}}, true},
+		{"nested op key undeclared", map[string]any{"cfg": map[string]any{"x": float64(1)}}, map[string]any{"cfg": map[string]any{"a": float64(1)}}, false},
+		{"nested grant key missing in op", map[string]any{"cfg": map[string]any{"a": float64(1)}}, map[string]any{"cfg": map[string]any{"a": float64(1), "b": float64(2)}}, false},
+		// A `{}` at the top level of the grant object is an explicit empty
+		// bound (§9.3 layer 5): deny.  Only a *deeper* nested empty object
+		// is unconstrained, matching the reference implementations.
+		{"top-level empty object grant is empty bound", map[string]any{"cfg": map[string]any{"x": float64(1)}}, map[string]any{"cfg": map[string]any{}}, false},
+		{"deep nested empty grant object is unconstrained", map[string]any{"cfg": map[string]any{"sub": map[string]any{"x": float64(1)}}}, map[string]any{"cfg": map[string]any{"sub": map[string]any{}}}, true},
+		{"deep nested op key undeclared", map[string]any{"cfg": map[string]any{"sub": map[string]any{"x": float64(1)}}}, map[string]any{"cfg": map[string]any{"sub": map[string]any{"a": float64(1)}}}, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

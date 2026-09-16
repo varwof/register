@@ -12,7 +12,7 @@ import (
 func testRegistry(t *testing.T) *Registry {
 	t.Helper()
 	reg := NewRegistry()
-	reg.Register(&SchemeDefinition{
+	if err := reg.Register(&SchemeDefinition{
 		SchemeID: "varwof/core-v1",
 		Name:     "core",
 		Version:  "1.0.0",
@@ -33,7 +33,9 @@ func testRegistry(t *testing.T) *Registry {
 			{ID: "cert:revoke", Description: "吊销"},
 			{ID: "key:recover", Description: "密钥恢复"},
 		},
-	})
+	}); err != nil {
+		t.Fatalf("register: %v", err)
+	}
 	return reg
 }
 

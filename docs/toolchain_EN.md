@@ -90,7 +90,7 @@ go run ./demo/rule-exec -publish rules/ -out published/
 | `rule-exec -publish` | ✅ sign | ✅ | ✗ | ✗ |
 | `LoadRulePlugin` (load) | ✅ verify | ✅ | ✗ | ✅ |
 | `gen-backfill` (data) | — | — | digest drift check | — |
-| `vectors-run` / property tests | — | — | CLC semantic conformance (105 vectors + 1184 property cases) | — |
+| `vectors-run` / property tests | — | — | CLC semantic conformance (120 vectors + 1184 property cases) | — |
 
 **Known gap:** the parameter contract only runs on the generation path
 (`gen-capability` / `gen-rule`).  A hand-written rule can bypass it, be signed and be

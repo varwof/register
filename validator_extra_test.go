@@ -11,7 +11,7 @@ import (
 
 func TestValidateRoles_Covered(t *testing.T) {
 	r := NewRegistry()
-	r.Register(&SchemeDefinition{
+	if err := r.Register(&SchemeDefinition{
 		SchemeID: "test/product",
 		Name:     "Test",
 		Capabilities: []CapabilityEntry{
@@ -21,7 +21,9 @@ func TestValidateRoles_Covered(t *testing.T) {
 		Roles: map[string]RoleDef{
 			"admin": {Grants: []string{"cert:issue", "cert:list"}},
 		},
-	})
+	}); err != nil {
+		t.Fatalf("register: %v", err)
+	}
 	uncovered, err := r.ValidateRoles("test/product")
 	if err != nil {
 		t.Fatalf("ValidateRoles: %v", err)
@@ -33,7 +35,7 @@ func TestValidateRoles_Covered(t *testing.T) {
 
 func TestValidateRoles_Uncovered(t *testing.T) {
 	r := NewRegistry()
-	r.Register(&SchemeDefinition{
+	if err := r.Register(&SchemeDefinition{
 		SchemeID: "test/product",
 		Name:     "Test",
 		Capabilities: []CapabilityEntry{
@@ -42,7 +44,9 @@ func TestValidateRoles_Uncovered(t *testing.T) {
 		Roles: map[string]RoleDef{
 			"admin": {Grants: []string{"cert:issue", "cert:delete"}},
 		},
-	})
+	}); err != nil {
+		t.Fatalf("register: %v", err)
+	}
 	uncovered, err := r.ValidateRoles("test/product")
 	if err != nil {
 		t.Fatalf("ValidateRoles: %v", err)
@@ -62,12 +66,14 @@ func TestValidateRoles_UnknownScheme(t *testing.T) {
 
 func TestRoleGrantCovered(t *testing.T) {
 	r := NewRegistry()
-	r.Register(&SchemeDefinition{
+	if err := r.Register(&SchemeDefinition{
 		SchemeID: "test/product",
 		Capabilities: []CapabilityEntry{
 			{ID: "cert:issue"},
 		},
-	})
+	}); err != nil {
+		t.Fatalf("register: %v", err)
+	}
 	if !r.RoleGrantCovered("test/product", "cert:issue") {
 		t.Error("expected grant to be covered")
 	}
@@ -87,11 +93,16 @@ func TestMatchCapability_ExtraCases(t *testing.T) {
 	}{
 		{"ca:issue", "ca:*", true},
 		{"ca:list", "ca:*", true},
+		// CLC-v1 §9.3 (audit R17): * and ** alone, and ?/glob forms, are not
+		// CLC segment grammar and never match; only a trailing * segment does.
 		{"ca:issue", "db:*", false},
-		{"any", "*", true},
-		{"any", "**", true},
-		{"x", "?", true},
+		{"any", "*", false},
+		{"any", "**", false},
+		{"x", "?", false},
 		{"ab", "?", false},
+		{"abc:def", "abc:*def", false},
+		{"a", "a:*", false},
+		{"a:x", "a:x:*", false},
 		{"exact", "exact", true},
 		{"nope", "exact", false},
 	}

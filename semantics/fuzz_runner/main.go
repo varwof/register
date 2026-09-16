@@ -46,67 +46,81 @@ func canonicalReason(s string) string {
 }
 
 type result struct {
-	ID      string      `json:"id"`
-	Impl    string      `json:"impl"`
-	RawPath *pathResult `json:"raw_path,omitempty"`
-	DecPath *pathResult `json:"decoded_path,omitempty"`
-	Sha     string      `json:"canonical_sha256,omitempty"`
-	Err     string      `json:"error,omitempty"`
+	ID      string              `json:"id"`
+	Impl    string              `json:"impl"`
+	RawPath *pathResult         `json:"raw_path,omitempty"`
+	DecPath *pathResult         `json:"decoded_path,omitempty"`
+	Sha     string              `json:"canonical_sha256,omitempty"`
+	Err     string              `json:"error,omitempty"`
 }
 
 type pathResult struct {
-	Verdict string `json:"verdict"`
-	Reason  string `json:"reason"`
+	Verdict    string   `json:"verdict"`
+	Reason     string   `json:"reason"`
+	Unresolved []string `json:"unresolved,omitempty"`
 }
 
 type fuzzCase struct {
-	ID      string          `json:"id"`
-	Axis    string          `json:"axis"`
-	Raw     string          `json:"raw"`
-	OpID    string          `json:"op_id"`
-	Grant   semantics.Grant `json:"grant"`
-	NoParam bool            `json:"no_params"`
-	RawB64  string          `json:"raw_b64"`
-	Note    string          `json:"note"`
+	ID      string           `json:"id"`
+	Axis    string           `json:"axis"`
+	Raw     string           `json:"raw"`
+	OpID    string           `json:"op_id"`
+	Grant   semantics.Grant  `json:"grant"`
+	Grants  []semantics.Grant `json:"grants"`
+	NoParam bool             `json:"no_params"`
+	RawB64  string           `json:"raw_b64"`
+	Note    string           `json:"note"`
 }
 
-func authorize(grant semantics.Grant, op semantics.Operation) (v string, r string, ok bool) {
+func effectiveGrants(c fuzzCase) []semantics.Grant {
+	if len(c.Grants) > 0 {
+		return c.Grants
+	}
+	return []semantics.Grant{c.Grant}
+}
+
+func authorize(grants []semantics.Grant, op semantics.Operation) (v string, r string, unresolved []string, ok bool) {
 	defer func() {
 		if p := recover(); p != nil {
-			v, r, ok = "deny", fmt.Sprintf("panic:%v", p), false
+			v, r, unresolved, ok = "deny", fmt.Sprintf("panic:%v", p), nil, false
 		}
 	}()
-	d := semantics.Authorize(grant, op)
-	return d.Verdict, canonicalReason(d.Reason), true
+	d := semantics.AuthorizeSet(grants, op)
+	if d.Verdict == semantics.VerdictAllowUR && len(d.Unresolved) > 0 {
+		unresolved = d.Unresolved
+	}
+	return d.Verdict, canonicalReason(d.Reason), unresolved, true
 }
 
 func rawPath(c fuzzCase) *pathResult {
+	grants := effectiveGrants(c)
 	if c.NoParam {
-		v, r, _ := authorize(c.Grant, semantics.Operation{ID: c.OpID})
-		return &pathResult{v, r}
+		v, r, ur, _ := authorize(grants, semantics.Operation{ID: c.OpID})
+		return &pathResult{v, r, ur}
 	}
 	if err := semantics.ValidateRawParams(c.Raw); err != nil {
-		return &pathResult{"deny", canonicalReason(err.Error())}
+		return &pathResult{"deny", canonicalReason(err.Error()), nil}
 	}
 	var params map[string]any
 	if err := json.Unmarshal([]byte(c.Raw), &params); err != nil {
-		return &pathResult{"deny", "invalid_params_number"}
+		return &pathResult{"deny", "invalid_params_number", nil}
 	}
-	v, r, _ := authorize(c.Grant, semantics.Operation{ID: c.OpID, Params: params})
-	return &pathResult{v, r}
+	v, r, ur, _ := authorize(grants, semantics.Operation{ID: c.OpID, Params: params})
+	return &pathResult{v, r, ur}
 }
 
 func decodedPath(c fuzzCase) (*pathResult, map[string]any, bool) {
+	grants := effectiveGrants(c)
 	if c.NoParam {
-		v, r, _ := authorize(c.Grant, semantics.Operation{ID: c.OpID})
-		return &pathResult{v, r}, nil, true
+		v, r, ur, _ := authorize(grants, semantics.Operation{ID: c.OpID})
+		return &pathResult{v, r, ur}, nil, true
 	}
 	var params map[string]any
 	if err := json.Unmarshal([]byte(c.Raw), &params); err != nil {
-		return &pathResult{"deny", "invalid_params_number"}, nil, false
+		return &pathResult{"deny", "invalid_params_number", nil}, nil, false
 	}
-	v, r, _ := authorize(c.Grant, semantics.Operation{ID: c.OpID, Params: params})
-	return &pathResult{v, r}, params, true
+	v, r, ur, _ := authorize(grants, semantics.Operation{ID: c.OpID, Params: params})
+	return &pathResult{v, r, ur}, params, true
 }
 
 func canonicalSha(params map[string]any, decOk bool, noParam bool) string {

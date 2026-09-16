@@ -4,26 +4,36 @@
 package ruleexec
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"time"
 
 	pki "github.com/varwof/types"
 )
 
 // SQLExecutor runs a generated SQL statement and returns rows as JSON
-// objects. The real implementation talks to MySQL; tests inject a fake.
-type SQLExecutor func(sql string, args ...any) ([]map[string]any, error)
+// objects. The context carries the request's deadline: implementations MUST
+// honour it so a slow/stalled query cannot outlive its HTTP request (audit
+// 2026-09-16, R9). The real implementation talks to MySQL; tests inject a
+// fake.
+type SQLExecutor func(ctx context.Context, sql string, args ...any) ([]map[string]any, error)
 
 // HTTPGateway is the reference "rule -> gateway -> mysql-api" chain: it
-// simulates the gateway admission path (mTLS identity via X-Client-CN),
-// runs the phase-two rule plugin, generates SQL from the rule params,
-// and executes it against the database.
+// simulates the gateway admission path (mTLS identity from the verified
+// peer certificate of the terminating TLS connection), runs the phase-two
+// rule plugin, generates SQL from the rule params, and executes it against
+// the database.
 type HTTPGateway struct {
 	plugins map[string]*RulePlugin // client CN -> per-user rule
 	exec    SQLExecutor
 	mux     *http.ServeMux
+	// clientCN returns the authenticated identity. It always comes from the
+	// mTLS termination layer (the verified peer certificate), never from a
+	// client-supplied header — see clientCN below (audit 2026-09-16, R7).
+	clientCN func(*http.Request) (string, bool)
 }
 
 // NewHTTPGateway builds a gateway with per-user rules and an executor.
@@ -35,14 +45,36 @@ func NewHTTPGateway(plugins map[string]*RulePlugin, exec SQLExecutor) *HTTPGatew
 	g.mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
+	g.clientCN = g.clientCNFromMTLS
 	return g
+}
+
+// clientCNFromMTLS resolves the client identity from the authenticated mTLS
+// peer certificate.  The X-Client-CN header is NEVER trusted for identity:
+// it is client-controllable and must not select a per-user rule — a
+// production deployment terminates mTLS in the gateway/proxy and passes the
+// verified peer chain in r.TLS.  Requests without verified peer identity are
+// refused (fail-closed).
+func (g *HTTPGateway) clientCNFromMTLS(r *http.Request) (string, bool) {
+	if r.TLS == nil || len(r.TLS.VerifiedChains) == 0 {
+		return "", false
+	}
+	peer := r.TLS.VerifiedChains[0][0]
+	if peer == nil {
+		return "", false
+	}
+	return peer.Subject.CommonName, true
 }
 
 // Handler exposes the HTTP handler (for httptest or a real server).
 func (g *HTTPGateway) Handler() http.Handler { return g.mux }
 
 func (g *HTTPGateway) handleRows(w http.ResponseWriter, r *http.Request) {
-	cn := r.Header.Get("X-Client-CN")
+	cn, ok := g.clientCN(r)
+	if !ok {
+		httpError(w, http.StatusUnauthorized, "no verified mTLS client identity")
+		return
+	}
 	plugin := g.plugins[cn]
 	if plugin == nil {
 		httpError(w, http.StatusUnauthorized, "unknown client identity")
@@ -84,12 +116,14 @@ func (g *HTTPGateway) handleRows(w http.ResponseWriter, r *http.Request) {
 		httpError(w, http.StatusBadGateway, err.Error())
 		return
 	}
-	rows, err := g.exec(sqlStr, args...)
+	rows, err := g.exec(r.Context(), sqlStr, args...)
 	if err != nil {
 		httpError(w, http.StatusBadGateway, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"sql": sqlStr, "args": args, "rows": rows})
+	// Note: the generated SQL and bind arguments are deliberately NOT echoed
+	// back to the caller — they can carry rule-bound literals (audit R9).
+	writeJSON(w, http.StatusOK, map[string]any{"rows": rows})
 }
 
 type stringSet map[string]struct{}
@@ -131,10 +165,18 @@ func writeJSON(w http.ResponseWriter, code int, v any) {
 	_ = json.NewEncoder(w).Encode(v)
 }
 
-// DBExecutor adapts a *sql.DB to SQLExecutor (real MySQL/MariaDB).
+// maxQueryDuration caps a single database query.  A buggy or adversarial
+// query must not be able to hold a gateway worker forever (audit R9).
+const maxQueryDuration = 30 * time.Second
+
+// DBExecutor adapts a *sql.DB to SQLExecutor (real MySQL/MariaDB).  It
+// enforces a bounded deadline on every query, honouring (but never exceeding)
+// the caller's context.
 func DBExecutor(db *sql.DB) SQLExecutor {
-	return func(q string, args ...any) ([]map[string]any, error) {
-		rows, err := db.Query(q, args...)
+	return func(ctx context.Context, q string, args ...any) ([]map[string]any, error) {
+		ctx, cancel := context.WithTimeout(ctx, maxQueryDuration)
+		defer cancel()
+		rows, err := db.QueryContext(ctx, q, args...)
 		if err != nil {
 			return nil, err
 		}

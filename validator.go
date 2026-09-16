@@ -5,7 +5,6 @@ package register
 
 import (
 	"fmt"
-	"path/filepath"
 	"strings"
 )
 
@@ -111,24 +110,32 @@ func FilterByScheme(caps []string, schemeID string) []string {
 	return result
 }
 
-// MatchCapability checks if a capability id matches a pattern (glob semantics).
-// Supports: exact match, *, ?, a:b:* prefix wildcards. Same semantics as pki-types MatchCapability.
+// MatchCapability reports whether a capability ID is covered by a grant
+// pattern using the CLC-v1 §9.3 segment grammar (audit 2026-09-16, R17): an
+// exact match, or a trailing `*` segment that spans one or more further
+// segments. `**`, `?`, bare `*`, and mid-segment globs are not part of the
+// grammar and never match — the old filepath.Match behavior blessed
+// near-everything.
 func MatchCapability(id, pattern string) bool {
 	if id == pattern {
 		return true
 	}
-	if pattern == "**" || pattern == "*" {
-		return true
+	parts := strings.Split(pattern, ":")
+	if len(parts) < 2 {
+		return false
 	}
-	ok, _ := filepath.Match(pattern, id)
-	if ok {
-		return ok
+	if parts[len(parts)-1] != "*" {
+		return false
 	}
-	if len(pattern) >= 2 && pattern[len(pattern)-1] == '*' && pattern[len(pattern)-2] == ':' {
-		prefix := pattern[:len(pattern)-1]
-		return len(id) >= len(prefix) && id[:len(prefix)] == prefix
+	for _, p := range parts[:len(parts)-1] {
+		if strings.Contains(p, "*") {
+			return false
+		}
 	}
-	return false
+	// A trailing `*` is a full segment: it must span at least one further
+	// segment of the ID, never zero.
+	prefix := pattern[:len(pattern)-1]
+	return len(id) > len(prefix) && strings.HasPrefix(id, prefix)
 }
 
 // ValidateRoles validates that all role grants in a scheme are covered by capabilities.

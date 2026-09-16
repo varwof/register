@@ -26,10 +26,32 @@ func validateParamsSchema(raw json.RawMessage, params map[string]any) error {
 		return fmt.Errorf("parse params_schema: %w", err)
 	}
 	defs := schemaDefs(schema)
-	if err := validateJSONSchema(schema, params, defs); err != nil {
+	v := &schemaValidator{defs: defs}
+	if err := v.validate(schema, params); err != nil {
 		return err
 	}
 	return nil
+}
+
+// maxSchemaRefDepth bounds $ref following and schema recursion.  A cyclic
+// $ref (e.g. a $def that only references itself) would otherwise recurse
+// forever and blow the stack (audit 2026-09-16, R8).  Legitimate recursive
+// schemas (e.g. the row_filter "and"/"or"/"not" grammar) nest by consuming
+// the value, so depth 100 is ample for real rules while capping runaway
+// $ref-only cycles.
+const maxSchemaRefDepth = 100
+
+// schemaValidator carries per-validation state: the $defs table plus the
+// recursion depth guarding against cyclic $ref graphs.
+type schemaValidator struct {
+	defs  map[string]any
+	depth int
+}
+
+func (v *schemaValidator) child() *schemaValidator {
+	cp := *v
+	cp.depth++
+	return &cp
 }
 
 func schemaDefs(schema map[string]any) map[string]any {
@@ -101,16 +123,20 @@ func checkType(t string, v any) error {
 	return nil
 }
 
-// validateJSONSchema validates value against schema. defs carries the
-// params_schema root $defs for $ref resolution.
-func validateJSONSchema(schema map[string]any, value any, defs map[string]any) error {
+// validate validates value against schema. defs carries the params_schema
+// root $defs for $ref resolution.  Depth is bounded, which stops runaway
+// ($ref-only) cycles from overflowing the stack (audit 2026-09-16, R8).
+func (v *schemaValidator) validate(schema map[string]any, value any) error {
 	// $ref takes precedence.
 	if ref, ok := schema["$ref"].(string); ok {
-		target, err := resolveRef(ref, defs)
+		target, err := resolveRef(ref, v.defs)
 		if err != nil {
 			return err
 		}
-		return validateJSONSchema(target, value, defs)
+		if v.depth >= maxSchemaRefDepth {
+			return fmt.Errorf("$ref nesting exceeds %d", maxSchemaRefDepth)
+		}
+		return v.child().validate(target, value)
 	}
 
 	// const
@@ -172,7 +198,7 @@ func validateJSONSchema(schema map[string]any, value any, defs map[string]any) e
 				if !ok {
 					continue
 				}
-				if err := validateJSONSchema(sub, pv, defs); err != nil {
+				if err := v.child().validate(sub, pv); err != nil {
 					return fmt.Errorf("property %q: %w", name, err)
 				}
 			}
@@ -214,9 +240,9 @@ func validateJSONSchema(schema map[string]any, value any, defs map[string]any) e
 					}
 				}
 			case map[string]any:
-				for k, v := range obj {
+				for k, val := range obj {
 					if _, defined := props[k]; !defined {
-						if err := validateJSONSchema(apv, v, defs); err != nil {
+						if err := v.child().validate(apv, val); err != nil {
 							return fmt.Errorf("property %q: %w", k, err)
 						}
 					}
@@ -229,7 +255,7 @@ func validateJSONSchema(schema map[string]any, value any, defs map[string]any) e
 	if arr, ok := value.([]any); ok {
 		if items, ok := schema["items"].(map[string]any); ok {
 			for i, it := range arr {
-				if err := validateJSONSchema(items, it, defs); err != nil {
+				if err := v.child().validate(items, it); err != nil {
 					return fmt.Errorf("item %d: %w", i, err)
 				}
 			}
@@ -260,7 +286,7 @@ func validateJSONSchema(schema map[string]any, value any, defs map[string]any) e
 			if !ok {
 				continue
 			}
-			if err := validateJSONSchema(sub, value, defs); err == nil {
+			if err := v.child().validate(sub, value); err == nil {
 				matched = true
 				break
 			} else {
@@ -274,7 +300,7 @@ func validateJSONSchema(schema map[string]any, value any, defs map[string]any) e
 
 	// not
 	if n, ok := schema["not"].(map[string]any); ok {
-		if err := validateJSONSchema(n, value, defs); err == nil {
+		if err := v.child().validate(n, value); err == nil {
 			return fmt.Errorf("must NOT match the schema")
 		}
 	}

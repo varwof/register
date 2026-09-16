@@ -20,11 +20,17 @@ func NewRegistry() *Registry {
 	return &Registry{schemes: make(map[string]*SchemeDefinition)}
 }
 
-// Register adds a scheme definition. Overwrites if scheme_id already exists.
-func (r *Registry) Register(def *SchemeDefinition) {
+// Register adds a scheme definition. It fails if scheme_id is already
+// registered — a silently overwritten duplicate masks a data problem
+// (audit 2026-09-16, R18).
+func (r *Registry) Register(def *SchemeDefinition) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if _, ok := r.schemes[def.SchemeID]; ok {
+		return fmt.Errorf("register: duplicate scheme_id %q", def.SchemeID)
+	}
 	r.schemes[def.SchemeID] = def
+	return nil
 }
 
 // Get returns a scheme definition by scheme_id.

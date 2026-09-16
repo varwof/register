@@ -4,6 +4,7 @@
 package ruleexec
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -62,16 +63,44 @@ func newTestGateway(t *testing.T, exec SQLExecutor) (*HTTPGateway, map[string]*R
 		"zhangsan": NewRulePlugin("std/database-v1", zhang, NewBudget(), demoHandler),
 		"lisi":     NewRulePlugin("std/database-v1", li, NewBudget(), demoHandler),
 	}
-	return NewHTTPGateway(plugins, exec), plugins
+	g := NewHTTPGateway(plugins, exec)
+	// Tests have no TLS terminator, so model the mTLS layer the way a real
+	// deployment provides it: an injected identity hook that returns the CN
+	// from the request.  The gateway itself never reads X-Client-CN (audit
+	// 2026-09-16, R7); this hook plays the position of the terminator that
+	// would populate r.TLS.VerifiedChains.
+	g.clientCN = func(r *http.Request) (string, bool) {
+		cn := r.Header.Get("X-Client-CN")
+		return cn, cn != ""
+	}
+	return g, plugins
 }
 
 // TestHTTPGatewayChain exercises the full "request -> rule plugin ->
 // SQL" chain without a database (fake executor), asserting the auth
 // and SQL-generation semantics.
+// TestHTTPGatewayHeaderSpoofRefused pins audit R7: a client-supplied
+// X-Client-CN header alone must NOT select a per-user rule — identity only
+// comes from the verified mTLS peer cert (here: a gateway without an
+// injected identity hook has no terminator, so it must fail closed).
+func TestHTTPGatewayHeaderSpoofRefused(t *testing.T) {
+	g, _ := newTestGateway(t, nil)
+	// Remove the test identity hook so the production default applies:
+	// only r.TLS.VerifiedChains counts.
+	g.clientCN = g.clientCNFromMTLS
+	req := httptest.NewRequest("GET", "/api/tables/customers/rows?tenant=org-a", nil)
+	req.Header.Set("X-Client-CN", "zhangsan") // attacker-controlled
+	rec := httptest.NewRecorder()
+	g.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("spoofed header with no mTLS peer must be 401, got %d", rec.Code)
+	}
+}
+
 func TestHTTPGatewayChain(t *testing.T) {
 	var lastSQL string
 	var lastArgs []any
-	fake := func(q string, args ...any) ([]map[string]any, error) {
+	fake := func(ctx context.Context, q string, args ...any) ([]map[string]any, error) {
 		lastSQL = q
 		lastArgs = args
 		return []map[string]any{{"id": 1, "name": "alice"}}, nil

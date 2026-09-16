@@ -39,12 +39,12 @@ func TestRegisterRulePluginsFromDir(t *testing.T) {
 		t.Fatal(err)
 	}
 	outDir := filepath.Join(dir, "out")
-	if _, err := PublishRules(filepath.Join(dir, "rules"), outDir, certPath, keyPath); err != nil {
+	if _, err := PublishRules(filepath.Join(dir, "rules"), outDir, certPath, keyPath, demoRegistry()); err != nil {
 		t.Fatal(err)
 	}
 
 	reg := pki.NewPluginRegistry()
-	schemes, err := RegisterRulePluginsFromDir(reg, outDir, []*x509.Certificate{cert}, nil)
+	schemes, err := RegisterRulePluginsFromDir(reg, outDir, []*x509.Certificate{cert}, nil, demoRegistry())
 	if err != nil {
 		t.Fatalf("register: %v", err)
 	}
@@ -75,7 +75,7 @@ func TestRegisterRulePluginsFromDir(t *testing.T) {
 		t.Fatal(err)
 	}
 	reg2 := pki.NewPluginRegistry()
-	if _, err := RegisterRulePluginsFromDir(reg2, outDir, []*x509.Certificate{cert}, nil); err == nil {
+	if _, err := RegisterRulePluginsFromDir(reg2, outDir, []*x509.Certificate{cert}, nil, demoRegistry()); err == nil {
 		t.Fatalf("tampered rule must fail registration")
 	}
 }

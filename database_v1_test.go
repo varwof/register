@@ -37,7 +37,9 @@ func TestDatabaseV1Registered(t *testing.T) {
 	}
 
 	r := NewRegistry()
-	r.Register(def)
+	if err := r.Register(def); err != nil {
+		t.Fatalf("register: %v", err)
+	}
 	for _, id := range []string{"std/database-v1:query:SELECT", "std/database-v1:query:INSERT", "std/database-v1:admin:TRUNCATE"} {
 		if _, _, err := r.ValidateCapability(id); err != nil {
 			t.Fatalf("registered capability %s must validate: %v", id, err)

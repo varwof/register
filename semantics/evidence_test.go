@@ -41,6 +41,11 @@ func TestValidateEvidenceConstraint(t *testing.T) {
 		"varwof/evidence-v1:role:2",             // unknown type
 		"varwof/constraint-v1:max_rows:100",     // authorization-side pair
 		"other/scheme-v1:freshness:sec:60",      // wrong declaring scheme
+
+		// Audit R10: an age large enough that n * time.Second would overflow
+		// time.Duration must be a grammar error, never a wrapped freshness.
+		"varwof/evidence-v1:freshness:sec:9223372036",   // int64-max seconds
+		"varwof/evidence-v1:freshness:sec:999999999999", // far beyond any duration
 	}
 	for _, c := range bad {
 		if err := ValidateEvidenceConstraint(c); !errors.Is(err, ErrEvidenceConstraint) {

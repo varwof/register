@@ -25,6 +25,15 @@ func testDef(id string, caps ...string) *SchemeDefinition {
 	}
 }
 
+// mustRegister registers a scheme in tests, failing the test on the R18
+// duplicate-scheme_id error.
+func mustRegister(t *testing.T, r *Registry, id string, caps ...string) {
+	t.Helper()
+	if err := r.Register(testDef(id, caps...)); err != nil {
+		t.Fatalf("Register(%q): %v", id, err)
+	}
+}
+
 func TestNewRegistry(t *testing.T) {
 	r := NewRegistry()
 	if r == nil {
@@ -38,7 +47,9 @@ func TestNewRegistry(t *testing.T) {
 func TestRegisterAndGet(t *testing.T) {
 	r := NewRegistry()
 	def := testDef("acme/widget", "read", "write")
-	r.Register(def)
+	if err := r.Register(def); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
 
 	got, ok := r.Get("acme/widget")
 	if !ok {
@@ -56,7 +67,7 @@ func TestRegisterAndGet(t *testing.T) {
 
 func TestHas(t *testing.T) {
 	r := NewRegistry()
-	r.Register(testDef("a/b"))
+	mustRegister(t, r, "a/b")
 
 	if !r.Has("a/b") {
 		t.Error("Has(a/b) = false, want true")
@@ -68,7 +79,7 @@ func TestHas(t *testing.T) {
 
 func TestHasCapability(t *testing.T) {
 	r := NewRegistry()
-	r.Register(testDef("a/b", "cap1", "cap2"))
+	mustRegister(t, r, "a/b", "cap1", "cap2")
 
 	if !r.HasCapability("a/b", "cap1") {
 		t.Error("HasCapability(a/b, cap1) = false")
@@ -86,7 +97,7 @@ func TestHasCapability(t *testing.T) {
 
 func TestValidateCapability(t *testing.T) {
 	r := NewRegistry()
-	r.Register(testDef("varwof/core-v1", "cert:issue", "cert:revoke"))
+	mustRegister(t, r, "varwof/core-v1", "cert:issue", "cert:revoke")
 
 	def, cap, err := r.ValidateCapability("varwof/core-v1:cert:issue")
 	if err != nil {
@@ -120,9 +131,9 @@ func TestValidateCapability(t *testing.T) {
 
 func TestSchemeIDs(t *testing.T) {
 	r := NewRegistry()
-	r.Register(testDef("z/a"))
-	r.Register(testDef("a/b"))
-	r.Register(testDef("m/c"))
+	mustRegister(t, r, "z/a")
+	mustRegister(t, r, "a/b")
+	mustRegister(t, r, "m/c")
 
 	ids := r.SchemeIDs()
 	if len(ids) != 3 {
@@ -135,7 +146,7 @@ func TestSchemeIDs(t *testing.T) {
 
 func TestSummary(t *testing.T) {
 	r := NewRegistry()
-	r.Register(testDef("a/b", "x", "y"))
+	mustRegister(t, r, "a/b", "x", "y")
 
 	s := r.Summary()
 	if !strings.Contains(s, "1 scheme(s)") {
@@ -146,17 +157,21 @@ func TestSummary(t *testing.T) {
 	}
 }
 
-func TestRegisterOverwrite(t *testing.T) {
+func TestRegisterDuplicateRejected(t *testing.T) {
 	r := NewRegistry()
-	r.Register(testDef("a/b", "old-cap"))
-	r.Register(testDef("a/b", "new-cap"))
+	if err := r.Register(testDef("a/b", "old-cap")); err != nil {
+		t.Fatalf("first Register: %v", err)
+	}
+	if err := r.Register(testDef("a/b", "new-cap")); err == nil {
+		t.Fatal("duplicate Register returned nil error, want refusal (R18)")
+	}
 
 	def, ok := r.Get("a/b")
 	if !ok {
-		t.Fatal("Get failed after overwrite")
+		t.Fatal("Get failed after register")
 	}
-	if len(def.Capabilities) != 1 || def.Capabilities[0].ID != "new-cap" {
-		t.Errorf("overwrite did not replace: caps = %v", def.Capabilities)
+	if len(def.Capabilities) != 1 || def.Capabilities[0].ID != "old-cap" {
+		t.Errorf("duplicate must not replace: caps = %v", def.Capabilities)
 	}
 }
 
@@ -164,10 +179,12 @@ func TestConcurrentAccess(t *testing.T) {
 	r := NewRegistry()
 	done := make(chan struct{})
 	go func() {
+		defer close(done)
+		r.Register(testDef("a/b", "cap"))
 		for i := 0; i < 100; i++ {
-			r.Register(testDef("a/b", "cap"))
+			r.Has("a/b")
+			r.SchemeIDs()
 		}
-		close(done)
 	}()
 	for i := 0; i < 100; i++ {
 		r.Has("a/b")

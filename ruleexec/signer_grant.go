@@ -77,17 +77,39 @@ func coversID(grantID, opID string) bool {
 }
 
 // ruleConstraintsWithinSigner requires every rule constraint type to appear in
-// the signer's authorization constraints.  Scheme spelling is normalized
-// (constraint / constraint-v1 / varwof/constraint-v1 refer to the same
-// namespace), so the match is by constraint ID.
+// the signer's authorization constraints and, when the signer bound is
+// declared, the rule's constraint value to be WITHIN the signer's bound
+// (semantics.ConstraintWithin, the same JSON subset semantic as §5.2: numbers
+// bound as upper limits, arrays as membership sets).  Scheme spelling is
+// normalized (constraint / constraint-v1 / varwof/constraint-v1 refer to the
+// same namespace), so the match is by constraint ID.
 func ruleConstraintsWithinSigner(rule *Rule, aic *pki.AIC) error {
 	for _, rc := range rule.Constraints {
 		found := false
 		for _, sc := range aic.AuthorizationConstraints {
-			if sc.CapabilityId == rc.ID {
-				found = true
-				break
+			if sc.CapabilityId != rc.ID {
+				continue
 			}
+			found = true
+			// When the signer declares a bound, the rule's declared value must
+			// not exceed it (e.g. a signer bound of max_rows:5 must not cover a
+			// rule declaring max_rows:100).  A signer constraint with no value
+			// is nominal and covers any value (absent params = unconstrained).
+			var ruleValue, signerValue any
+			if len(rc.Params) > 0 {
+				if err := json.Unmarshal(rc.Params, &ruleValue); err != nil {
+					return fmt.Errorf("signer grant: rule constraint %s params: %w", rc.ID, err)
+				}
+			}
+			if len(sc.Parameters) > 0 {
+				if err := json.Unmarshal(sc.Parameters, &signerValue); err != nil {
+					return fmt.Errorf("signer grant: signer constraint %s params: %w", sc.CapabilityId, err)
+				}
+			}
+			if err := semantics.ConstraintWithin(ruleValue, signerValue); err != nil {
+				return fmt.Errorf("signer grant: rule constraint %s:%s exceeds the signer's bound: %w", rc.Scheme, rc.ID, err)
+			}
+			break
 		}
 		if !found {
 			return fmt.Errorf("signer grant: rule constraint %s:%s is not declared by the signer", rc.Scheme, rc.ID)

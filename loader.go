@@ -128,7 +128,9 @@ func NewRegistryFromDisk(dir string) (*Registry, error) {
 	}
 	reg := NewRegistry()
 	for _, def := range schemes {
-		reg.Register(def)
+		if err := reg.Register(def); err != nil {
+			return nil, err
+		}
 	}
 	return reg, nil
 }
@@ -142,7 +144,9 @@ func NewRegistryFromBoth(diskDir string) (*Registry, error) {
 	}
 	reg := NewRegistry()
 	for _, def := range schemes {
-		reg.Register(def)
+		if err := reg.Register(def); err != nil {
+			return nil, err
+		}
 	}
 	return reg, nil
 }

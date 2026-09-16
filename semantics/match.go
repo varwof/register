@@ -125,6 +125,12 @@ func (a ActionId) Validate() error {
 	if a.Digest.Alg == "" || len(a.Digest.Value) == 0 {
 		return fmt.Errorf("%w: action digest required", ErrActionShape)
 	}
+	// The digest length is suite-pinned (audit 2026-09-16, R15): for
+	// jcs-sha256 the value must be exactly 32 bytes.  A length-mismatched
+	// digest would change identity semantics while claiming the suite name.
+	if a.Suite == SuiteJCSSHA256 && len(a.Digest.Value) != sha256.Size {
+		return fmt.Errorf("%w: %s digest must be %d bytes, got %d", ErrActionShape, a.Suite, sha256.Size, len(a.Digest.Value))
+	}
 	return nil
 }
 

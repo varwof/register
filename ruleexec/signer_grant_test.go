@@ -4,6 +4,8 @@
 package ruleexec
 
 import (
+	"crypto/x509"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -73,6 +75,18 @@ func TestRuleWithinSignerGrant(t *testing.T) {
 			why:         "签名者未声明规则要求的 allowed-cidr 约束",
 		},
 		{
+			name: "rule constraint exceeds signer bound (number)",
+			caps: []pki.Capability{{
+				SchemeId: "std/database-v1", CapabilityId: "query:SELECT",
+			}},
+			constraints: []pki.Capability{{
+				SchemeId: "varwof/constraint-v1", CapabilityId: "max_rows",
+				Parameters: []byte(`5`),
+			}},
+			wantOK: false,
+			why:    "签名者 max_rows=5，规则声明其 max_rows=100 越界",
+		},
+		{
 			name:        "no grant at all",
 			caps:        nil,
 			constraints: nil,
@@ -99,6 +113,48 @@ func TestRuleWithinSignerGrant(t *testing.T) {
 	}
 }
 
+// TestRuleConstraintWithinSignerValues pins the constraint VALUE boundary
+// (rev security audit 2026-09-16, R3): a rule whose declared constraint value
+// exceeds the signer's bound must not be published, even when the constraint
+// ID is declared by the signer.
+func TestRuleConstraintWithinSignerValues(t *testing.T) {
+	loadRule := func(limit int) *Rule {
+		r, err := LoadRuleBytes([]byte(ruleJSON))
+		if err != nil {
+			t.Fatal(err)
+		}
+		// Replace the rule's constraint params with a max_rows value.
+		r.Constraints = []Constraint{{
+			Scheme: "varwof/constraint-v1", ID: "max_rows",
+			Params: []byte(fmt.Sprintf(`%d`, limit)),
+		}}
+		return r
+	}
+	signer := func(bound string) *x509.Certificate {
+		dir := t.TempDir()
+		_, _, cert, err := rulesigner.GenSignerCertWithGrant(dir, []pki.Capability{{
+			SchemeId: "std/database-v1", CapabilityId: "query:*",
+		}}, []pki.Capability{{
+			SchemeId: "varwof/constraint-v1", CapabilityId: "max_rows",
+			Parameters: []byte(bound),
+		}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return cert
+	}
+
+	if err := RuleWithinSignerGrant(loadRule(100), signer("5")); err == nil {
+		t.Fatalf("rule max_rows=100 must not be within signer bound 5")
+	}
+	if err := RuleWithinSignerGrant(loadRule(5), signer("5")); err != nil {
+		t.Fatalf("rule max_rows=5 must be within signer bound 5: %v", err)
+	}
+	if err := RuleWithinSignerGrant(loadRule(3), signer("5")); err != nil {
+		t.Fatalf("rule max_rows=3 must be within signer bound 5: %v", err)
+	}
+}
+
 // TestPluginLoadEnforcesSignerGrant is the end-to-end form: a rule signed by a
 // signer whose grant does not cover it MUST fail registration, while the same
 // rule loads under a covering grant.
@@ -121,7 +177,7 @@ func TestPluginLoadEnforcesSignerGrant(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		_, err = LoadRulePlugin(rulePath, roots, demoHandler)
+		_, err = LoadRulePlugin(rulePath, roots, demoHandler, demoRegistry())
 		return err
 	}
 

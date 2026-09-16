@@ -39,7 +39,7 @@ func TestPublishRules(t *testing.T) {
 		t.Fatal(err)
 	}
 	outDir := filepath.Join(dir, "out")
-	manifest, err := PublishRules(rulesDir, outDir, certPath, keyPath)
+	manifest, err := PublishRules(rulesDir, outDir, certPath, keyPath, demoRegistry())
 	if err != nil {
 		t.Fatalf("publish: %v", err)
 	}
@@ -73,7 +73,7 @@ func TestPublishRules(t *testing.T) {
 	if err := os.WriteFile(bad, []byte(`{"rule_id":"bad"}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := PublishRules(rulesDir, outDir, certPath, keyPath); err == nil {
+	if _, err := PublishRules(rulesDir, outDir, certPath, keyPath, demoRegistry()); err == nil {
 		t.Fatalf("invalid rule must fail publish")
 	}
 }

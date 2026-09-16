@@ -146,6 +146,13 @@ func TestActionIdStringRoundTrip(t *testing.T) {
 			t.Errorf("ParseActionId(%q) = nil error, want a refusal", bad)
 		}
 	}
+
+	// Audit R15: the digest length is suite-pinned — a 4-byte base64url
+	// digest must not be accepted under jcs-sha256 (it would round-trip
+	// here without the length check).
+	if _, err := ParseActionId("clc-action:1:payment.release.1:jcs-sha256:AAAA"); err == nil {
+		t.Error("ParseActionId with 4-byte jcs-sha256 digest = nil error, want a refusal")
+	}
 }
 
 // §6.4: equal identity matches; a comparable difference does not; anything the

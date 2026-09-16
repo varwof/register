@@ -174,7 +174,11 @@ func TestMatchCapabilityWildcard(t *testing.T) {
 		{"cert:issue", "ca:*", false},
 		{"gateway:proxy", "gateway:*", true},
 		{"gateway:admin:config", "gateway:*", true},
-		{"ca:list", "*", true},
+		// CLC-v1 §9.3 (audit R17): only a trailing * segment is a wildcard.
+		// Bare * and mid-segment/glob forms are not CLC grammar and never match.
+		{"ca:list", "*", false},
+		{"ca:list", "**", false},
+		{"ca:list", "ca:l*st", false},
 		{"ca:list", "ca:list:*", false},
 		{"ca:list", "?", false},
 	}

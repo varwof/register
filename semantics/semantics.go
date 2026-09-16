@@ -733,6 +733,11 @@ func valueSubset(opVal, grantVal any) (bool, string) {
 		if !ok {
 			return false, ErrParamsExceedGrant.Error()
 		}
+		if len(gv) == 0 {
+			// rev CLC-1.3: an empty params object is unconstrained (§9.3),
+			// at every nesting depth — it declares no keys, so no closure.
+			return true, ""
+		}
 		for k, gvv := range gv {
 			ovv, ok := ov[k]
 			if !ok {
@@ -740,6 +745,14 @@ func valueSubset(opVal, grantVal any) (bool, string) {
 			}
 			if ok, reason := valueSubset(ovv, gvv); !ok {
 				return false, reason
+			}
+		}
+		// Key closure applies recursively: every op key inside a nested
+		// object must be declared by the grant key, exactly as §9.3 layer 7
+		// does at the top level (audit 2026-09-16, R16).
+		for k := range ov {
+			if _, ok := gv[k]; !ok {
+				return false, fmt.Errorf("%w: %s", ErrParamsUndeclared, k).Error()
 			}
 		}
 		return true, ""
@@ -761,6 +774,26 @@ func enumEqual(a, b any) bool {
 		return fmt.Sprintf("%v", a) == fmt.Sprintf("%v", b)
 	}
 	return string(ca) == string(cb)
+}
+
+// ConstraintWithin reports whether value is within a declared bound using the
+// same JSON subset semantic as §5.2 valueSubset: numbers compare as upper
+// bounds, arrays are membership sets, objects recurse per key. It is used by
+// publication-boundary checks (a rule's constraint value must not exceed the
+// signer's constraint value). If bound is absent, the constraint is nominal
+// and any value is accepted (matching absent-params = unconstrained). An
+// explicitly empty bound ([]/{}) denies the class, exactly like §5.2.
+func ConstraintWithin(value, bound any) error {
+	if value == nil {
+		return ErrInvalidParamsNull
+	}
+	if bound == nil {
+		return nil
+	}
+	if ok, reason := valueSubset(value, bound); !ok {
+		return errors.New(reason)
+	}
+	return nil
 }
 
 // Entails checks if a grant covers an operation per CLC-v1 §5.

@@ -49,6 +49,12 @@ const (
 	evidenceConsumption    = reservedEvidenceScheme + ":consumption"
 	evidenceQuorum         = reservedEvidenceScheme + ":quorum"
 	evidenceExclusion      = reservedEvidenceScheme + ":exclusion"
+
+	// maxEvidenceAgeSeconds bounds max_age_sec so that n * time.Second below
+	// cannot overflow time.Duration's int64 nanoseconds (~292 years of
+	// seconds).  An absurdly large age is a grammar error, not a wrap-around
+	// freshness answer (audit 2026-09-16, R10).
+	maxEvidenceAgeSeconds = 1_000_000_000 // ~31.7 years
 )
 
 // EvidenceVerdict is the three-valued result of evaluating one evidence
@@ -125,6 +131,9 @@ func ValidateEvidenceConstraint(c string) error {
 		n, err := strconv.Atoi(parts[3])
 		if err != nil || n < 0 {
 			return fmt.Errorf("%w: %q (max age must be a non-negative integer)", ErrEvidenceConstraint, c)
+		}
+		if n > maxEvidenceAgeSeconds {
+			return fmt.Errorf("%w: %q (max age exceeds %d seconds)", ErrEvidenceConstraint, c, maxEvidenceAgeSeconds)
 		}
 	case evidenceConsumption:
 		if len(parts) != 3 || parts[2] != "once" {

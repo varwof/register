@@ -102,8 +102,9 @@ func decodeRecord(raw []byte) (semantics.DecisionRecord, error) {
 
 // decodeAny accepts either container: a bare Decision Record, or a DSSE
 // envelope whose in-toto statement carries the record.  Envelopes are checked
-// structurally (payload type, statement shape, subject binding) — signature
-// verification needs keys and belongs to the caller.
+// structurally (payload type, statement shape, subject binding).  A signature
+// is NOT verification: without the caller's keys this function refuses rather
+// than claim an `ok` (audit 2026-09-16, R11).
 func decodeAny(raw []byte) (semantics.DecisionRecord, error) {
 	if looksLikeEnvelope(raw) {
 		var env semantics.Envelope
@@ -118,7 +119,7 @@ func decodeAny(raw []byte) (semantics.DecisionRecord, error) {
 			return semantics.DecisionRecord{}, err
 		}
 		if len(env.Signatures) > 0 {
-			fmt.Fprintf(os.Stderr, "record: envelope carries %d signature(s); structural check only, no keys available\n", len(env.Signatures))
+			return semantics.DecisionRecord{}, fmt.Errorf("envelope carries %d signature(s) but no verification keys were supplied; structural check alone must not be reported as ok", len(env.Signatures))
 		}
 		return rec, nil
 	}

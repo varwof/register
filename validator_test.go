@@ -9,7 +9,7 @@ import (
 
 func TestValidateCapabilitiesValid(t *testing.T) {
 	r := NewRegistry()
-	r.Register(testDef("varwof/core-v1", "cert:issue", "cert:revoke", "crl:read"))
+	mustRegister(t, r, "varwof/core-v1", "cert:issue", "cert:revoke", "crl:read")
 
 	result := r.ValidateCapabilities([]string{
 		"varwof/core-v1:cert:issue",
@@ -25,7 +25,7 @@ func TestValidateCapabilitiesValid(t *testing.T) {
 
 func TestValidateCapabilitiesErrors(t *testing.T) {
 	r := NewRegistry()
-	r.Register(testDef("varwof/core-v1", "cert:issue"))
+	mustRegister(t, r, "varwof/core-v1", "cert:issue")
 
 	result := r.ValidateCapabilities([]string{
 		"varwof/core-v1:cert:issue",

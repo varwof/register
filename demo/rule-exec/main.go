@@ -52,6 +52,19 @@ const ruleJSON = `{
   }
 }`
 
+// demoRegistry loads the std/database-v1 scheme definition so that rule
+// validation (Rule.Validate) has a real parameter contract to enforce.
+func demoRegistry() *register.Registry {
+	reg, err := register.NewRegistryFromDisk("testdata/capability")
+	if err != nil {
+		reg, err = register.NewRegistryFromDisk(filepath.Join("..", "testdata", "capability"))
+		if err != nil {
+			fatal(fmt.Errorf("load scheme registry: %w", err))
+		}
+	}
+	return reg
+}
+
 func main() {
 	sqlOnly := flag.Bool("sql", false, "print generated MySQL SQL for the demo rule and exit")
 	publishDir := flag.String("publish", "", "publish rules from this dir (rules/<scheme>/vX.Y.json)")
@@ -66,7 +79,7 @@ func main() {
 		if err != nil {
 			fatal(err)
 		}
-		manifest, err := ruleexec.PublishRules(*publishDir, *outDir, certPath, keyPath)
+		manifest, err := ruleexec.PublishRules(*publishDir, *outDir, certPath, keyPath, demoRegistry())
 		if err != nil {
 			fatal(err)
 		}
