@@ -1,0 +1,8 @@
+{
+  "scheme_id": "std/database-v1",
+  "name": "Interop test content",
+  "version": "1.0.0",
+  "vendor": "std",
+  "product": "database-v1",
+  "capabilities": []
+}
