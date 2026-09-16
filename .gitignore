@@ -11,6 +11,11 @@
 *.db-shm
 *.p7s
 
+# Committed PKCS#7 interop fixture: public certs + a signature, no private key
+# (keys are generated in a temp dir by testdata/pkcs7-interop/gen.sh).
+!testdata/pkcs7-interop/*.pem
+!testdata/pkcs7-interop/*.p7s
+
 # OS
 .DS_Store
 Thumbs.db
