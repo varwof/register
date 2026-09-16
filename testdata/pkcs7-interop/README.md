@@ -35,6 +35,7 @@ being regression-checked even where the live cross-check cannot run.
 | `root.pem` | self-signed test root CA (EC P-256) |
 | `signer.pem` | signer leaf, `extendedKeyUsage=codeSigning` (the usage the verifier requires) |
 | `openssl.p7s` | detached PKCS#7/CMS over `content.json`, produced by `openssl cms -sign` |
+| `unrelated-ca.pem` | an unrelated CA used as a must-reject trust root |
 | `gen.sh` | regenerates the three files above (generates keys in a temp dir) |
 
 ## Regenerating
