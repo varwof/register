@@ -1,0 +1,8 @@
+# The PKCS#7 interop fixture is byte-exact test data: openssl signed the exact
+# bytes of content.json on disk, so a checkout must never rewrite its line
+# endings (a CRLF conversion on Windows changes the digest and the signature
+# stops verifying).  The certificates and signature are parsed by length, so
+# keep them byte-exact too.
+testdata/pkcs7-interop/content.json -text
+testdata/pkcs7-interop/*.pem -text
+testdata/pkcs7-interop/*.p7s -text
