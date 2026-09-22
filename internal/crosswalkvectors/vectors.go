@@ -16,6 +16,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/varwof/register/semantics"
 )
@@ -244,6 +245,140 @@ func MapProfile(profile string, source json.RawMessage) ([]semantics.Grant, erro
 			return nil, err
 		}
 		return []semantics.Grant{merged}, nil
+
+	case "atn-manifest->clc-v1":
+		// draft-somoza-dmsc-atn-agent-trust-negotiation-00 §5.1/§9.2: a
+		// capability {id, action, bounds}; the dimension values are declared
+		// ceilings (resource_bounds / numeric conditions).  ATN's identity
+		// rule requires the same id and the same schema digest; this profile
+		// folds the (id, action) pair into the CLC identifier, so a different
+		// id maps to a different action class (different_namespace).
+		var atn struct {
+			ID           string         `json:"id"`
+			Action       string         `json:"action"`
+			SchemaDigest string         `json:"schema_digest,omitempty"`
+			Bounds       map[string]any `json:"bounds,omitempty"`
+		}
+		if err := json.Unmarshal(source, &atn); err != nil {
+			return nil, err
+		}
+		if atn.ID == "" || atn.Action == "" {
+			return nil, fmt.Errorf("atn: id and action are required")
+		}
+		id := "atn/manifest-v1:" + atn.ID + ":" + atn.Action
+		if atn.SchemaDigest != "" {
+			// ATN §9.1 rule 2: two implementations resolving the same id to
+			// different schema.digest values MUST treat the capabilities as
+			// distinct.  Carry the digest as a trailing path segment (":" and
+			// "/" sanitized to "-", the CLC segment separator) so a mismatch
+			// maps to a different identifier and fails closed (ccx-043) rather
+			// than being dropped and compared as equal.
+			id += ":" + strings.NewReplacer(":", "-", "/", "-").Replace(atn.SchemaDigest)
+		}
+		return []semantics.Grant{{ID: id, Params: atn.Bounds}}, nil
+
+	case "aat-i4->clc-v1":
+		// draft-niyikiza-oauth-attenuating-agent-tokens-01 §4.5 (I4): one tool
+		// and its argument-constraint map.  tools(derived) ⊆ tools(parent) is
+		// the identifier relation; constraints(derived) ⊑ constraints(parent)
+		// is the parameter relation.  AAT's own "contains"/"subset" argument
+		// types are constraint values here, never the capability relation.
+		var aat struct {
+			Tool string         `json:"tool"`
+			Args map[string]any `json:"args,omitempty"`
+		}
+		if err := json.Unmarshal(source, &aat); err != nil {
+			return nil, err
+		}
+		if aat.Tool == "" {
+			return nil, fmt.Errorf("aat: tool is required")
+		}
+		return []semantics.Grant{{ID: "aat/toolset-v1:" + aat.Tool, Params: aat.Args}}, nil
+
+	case "aip-attenuation->clc-v1":
+		// draft-prakash-aip-01 §4.4: a capability with an optional budget
+		// ceiling.  AIP resolves an absent dimension to its nearest ancestor
+		// before attenuation is checked; the profile therefore maps an absent
+		// budget to no bound (an absent ancestor ceiling), not to a bound.
+		var aip struct {
+			Capability string   `json:"capability"`
+			Budget     *float64 `json:"budget"`
+		}
+		if err := json.Unmarshal(source, &aip); err != nil {
+			return nil, err
+		}
+		if aip.Capability == "" {
+			return nil, fmt.Errorf("aip: capability is required")
+		}
+		var params map[string]any
+		if aip.Budget != nil {
+			params = map[string]any{"budget": *aip.Budget}
+		}
+		return []semantics.Grant{{ID: "aip/scope-v1:" + aip.Capability, Params: params}}, nil
+
+	case "aae-constraint->clc-v1":
+		// draft-kroehl-agentic-trust-aae-02 §2.3/§3: one mandate action plus
+		// the CONSTRAINTS values, already unwrapped from their {value,...}
+		// envelope by this profile.  Actions subset is the identifier
+		// relation; numeric upper bounds / allowlists are the parameter one.
+		var aae struct {
+			Action      string         `json:"action"`
+			Constraints map[string]any `json:"constraints,omitempty"`
+		}
+		if err := json.Unmarshal(source, &aae); err != nil {
+			return nil, err
+		}
+		if aae.Action == "" {
+			return nil, fmt.Errorf("aae: action is required")
+		}
+		return []semantics.Grant{{ID: "aae/mandate-v1:" + aae.Action, Params: aae.Constraints}}, nil
+
+	case "aoa-scope->clc-v1":
+		// draft-liu-agent-operation-authorization-02 §6.2: an operation scope
+		// string, which the AS validates by "scope string containment" in the
+		// simple case.  The string is mapped segment-for-segment into the CLC
+		// path; a trailing * is the carrier's own scope wildcard.
+		var aoa struct {
+			Operation string `json:"operation"`
+		}
+		if err := json.Unmarshal(source, &aoa); err != nil {
+			return nil, err
+		}
+		if aoa.Operation == "" {
+			return nil, fmt.Errorf("aoa: operation is required")
+		}
+		return []semantics.Grant{{ID: "aoa/scope-v1:" + aoa.Operation}}, nil
+
+	case "aegis-delegation->clc-v1":
+		// AEGIS AIAM-1 §2.2/§3.2 (AIAM1-DEL-010 monotonic narrowing): a dotted
+		// capability id plus numeric context bounds.  Dots become path segments.
+		// The id is mapped literally: AEGIS grants capabilities individually and
+		// does not define domain-level containment, so a bare domain is NOT
+		// widened to a namespace wildcard (ccx-042 fails closed) — inventing that
+		// allow would assert semantics AEGIS does not state.  Non-numeric context
+		// (environment, request_source) is not a declared bound and is dropped
+		// here; §8.1 requires the profile to leave such dimensions to the carrier.
+		var ag struct {
+			Capability string         `json:"capability"`
+			Context    map[string]any `json:"context,omitempty"`
+		}
+		if err := json.Unmarshal(source, &ag); err != nil {
+			return nil, err
+		}
+		if ag.Capability == "" {
+			return nil, fmt.Errorf("aegis: capability is required")
+		}
+		id := "aegis/action-v1:" + strings.Join(strings.Split(ag.Capability, "."), ":")
+		var params map[string]any
+		for k, v := range ag.Context {
+			if _, ok := v.(float64); ok {
+				if params == nil {
+					params = make(map[string]any)
+				}
+				params[k] = v
+			}
+		}
+		return []semantics.Grant{{ID: id, Params: params}}, nil
 
 	default:
 		return nil, fmt.Errorf("unknown cross-walk profile %q", profile)
