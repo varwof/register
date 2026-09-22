@@ -21,6 +21,7 @@ import (
 type Grant struct {
 	ID          string         `json:"id"`
 	Params      map[string]any `json:"params,omitempty"`
+	ParamBounds map[string]any `json:"param_bounds,omitempty"`
 	Constraints []string       `json:"constraints,omitempty"`
 }
 
@@ -59,27 +60,33 @@ type MatchResult struct {
 }
 
 var (
-	ErrUnsupportedWildcard = errors.New("unsupported_wildcard")
-	ErrInvalidCapabilityID = errors.New("invalid_capability_id")
-	ErrMissingCapabilityID = errors.New("missing_capability_id")
-	ErrInvalidConstraint   = errors.New("invalid_constraint")
-	ErrInvalidParamsNull   = errors.New("invalid_params_null")
-	ErrParamsMissing       = errors.New("params_missing")
-	ErrParamsUndeclared    = errors.New("undeclared_param")
-	ErrCapabilityNotAuth   = errors.New("capability_not_authorized")
-	ErrUnknownConstraint   = errors.New("unknown_constraint")
-	ErrDifferentNamespace  = errors.New("different_namespace")
-	ErrLiteralMismatch     = errors.New("literal_mismatch")
-	ErrWildcardNoTrailing  = errors.New("wildcard_requires_trailing_segment")
-	ErrParamsExceedGrant   = errors.New("params_exceed_grant")
-	ErrEmptyBoundDenies    = errors.New("empty_bound_denies_class")
-	ErrNotInEnum           = errors.New("not_in_enum")
-	ErrNoOverlap           = errors.New("no_overlap")
-	ErrAbsentSource        = errors.New("absent_source")
-	ErrInvalidParamsDupKey = errors.New("invalid_params_duplicate_key")
-	ErrInvalidParamsNumber = errors.New("invalid_params_number")
-	ErrInvalidParamsSize   = errors.New("invalid_params_size")
-	ErrUnsupportedLangRev  = errors.New("unsupported_language_revision")
+	ErrUnsupportedWildcard  = errors.New("unsupported_wildcard")
+	ErrInvalidCapabilityID  = errors.New("invalid_capability_id")
+	ErrMissingCapabilityID  = errors.New("missing_capability_id")
+	ErrInvalidConstraint    = errors.New("invalid_constraint")
+	ErrInvalidParamsNull    = errors.New("invalid_params_null")
+	ErrParamsMissing        = errors.New("params_missing")
+	ErrParamsUndeclared     = errors.New("undeclared_param")
+	ErrCapabilityNotAuth    = errors.New("capability_not_authorized")
+	ErrUnknownConstraint    = errors.New("unknown_constraint")
+	ErrDifferentNamespace   = errors.New("different_namespace")
+	ErrLiteralMismatch      = errors.New("literal_mismatch")
+	ErrWildcardNoTrailing   = errors.New("wildcard_requires_trailing_segment")
+	ErrParamsExceedGrant    = errors.New("params_exceed_grant")
+	ErrEmptyBoundDenies     = errors.New("empty_bound_denies_class")
+	ErrNotInEnum            = errors.New("not_in_enum")
+	ErrNoOverlap            = errors.New("no_overlap")
+	ErrAbsentSource         = errors.New("absent_source")
+	ErrInvalidParamsDupKey  = errors.New("invalid_params_duplicate_key")
+	ErrInvalidParamsNumber  = errors.New("invalid_params_number")
+	ErrInvalidParamsSize    = errors.New("invalid_params_size")
+	ErrInvalidParamsBinding = errors.New("invalid_params_binding")
+	ErrParamsCardinality    = errors.New("params_cardinality")
+	ErrParamsOutOfRange     = errors.New("params_out_of_range")
+	ErrParamsNotMultiple    = errors.New("params_not_multiple")
+	ErrUnsupportedLangRev   = errors.New("unsupported_language_revision")
+	ErrChildExceedsParent   = errors.New("child_exceeds_parent")
+	ErrParamsNotNarrower    = errors.New("params_not_narrower")
 )
 
 // rejectNonFinite refuses non-finite numbers in params (rev CLC-1.4): JSON
@@ -267,7 +274,7 @@ func paramsDepth(v any, depth int) int {
 // json.Marshal would over-count `&`/`<`/`>` and U+2028/U+2029.  The bytes
 // change for `&`/`<`/`>` material — a
 // compatibility note for stored digests — while CLC-1.4/1.5 inputs still read.)
-const CLCRevision = "CLC-1.8"
+const CLCRevision = "CLC-1.14"
 
 const (
 	// maxParamsSerializedBytes bounds the JCS-serialized params size
@@ -819,33 +826,152 @@ func Entails(grant Grant, op Operation) MatchResult {
 	}
 
 	// §5.3 step 3: grant params absent (or {} — rev CLC-1.3: the empty object
-	// is the same as absent, unconstrained) → true
-	if grant.Params == nil || len(grant.Params) == 0 {
+	// is the same as absent, unconstrained) → true.  rev CLC-1.10: a grant is
+	// unconstrained only when it declares neither params nor param_bounds.
+	hasParams := grant.Params != nil && len(grant.Params) > 0
+	hasBounds := len(grant.ParamBounds) > 0
+	if !hasParams && !hasBounds {
 		return MatchResult{Entails: true}
+	}
+
+	// §9.1 layer 2 (rev CLC-1.10): param_bounds grammar and binding rule.
+	if err := ValidateParamBounds(grant.ParamBounds, grant.Params); err != nil {
+		return MatchResult{Entails: false, Reason: err.Error()}
 	}
 
 	// §9.3 layer 6 (null) runs BEFORE layer 7 (presence): a grant that carries
 	// a null reports invalid_params_null even when the operation omits params
 	// entirely.  §6.3 layer-6 note.
-	if err := ValidateGrantParams(grant.Params); err != nil {
-		return MatchResult{Entails: false, Reason: err.Error()}
+	if hasParams {
+		if err := ValidateGrantParams(grant.Params); err != nil {
+			return MatchResult{Entails: false, Reason: err.Error()}
+		}
 	}
 
-	// §5.3 step 4: op params absent → false (bounded grant, fail-closed)
-	if op.Params == nil {
-		return MatchResult{Entails: false, Reason: ErrParamsMissing.Error()}
+	if op.Params != nil {
+		if err := ValidateOperationParams(op.Params); err != nil {
+			return MatchResult{Entails: false, Reason: err.Error()}
+		}
 	}
 
-	if err := ValidateOperationParams(op.Params); err != nil {
-		return MatchResult{Entails: false, Reason: err.Error()}
-	}
-
-	// §5.3 step 5: params subset
-	if ok, reason := paramsSubset(op.Params, grant.Params); !ok {
+	// §5.3 steps 4–5: presence and params subset, over the §6.5 declared set.
+	if ok, reason := entailsDeclared(op.Params, grant.Params, grant.ParamBounds); !ok {
 		return MatchResult{Entails: false, Reason: reason}
 	}
 
 	return MatchResult{Entails: true}
+}
+
+// Contains reports whether a child grant stays inside a parent grant's
+// declared authorization boundary, per draft-wei-clc-ext-00 §4 (CLD-D).
+//
+// The relation is compared on DECLARED sets and DECLARED bounds, not on
+// behavior: an operation that fits the parent proves nothing about a child's
+// runtime behavior (CLC-v1 §12; the extension keeps that scope).  If any
+// layer of §4 fails, Contains is false with the first failing layer's reason
+// code (§4 layer order).
+//
+// Layer semantics match the extension draft:
+//   - layer 1: both grants valid (identifier + params grammar);
+//   - layer 2: child id covered by parent id via CLC-v1 path coverage
+//     (different_namespace kept; every other coverage failure collapses into
+//     child_exceeds_parent, draft §4.2/§5);
+//   - layer 3: child params within parent's declared bounds (number upper
+//     bounds, enums as membership) and child key set closed by parent.
+//
+// Constraints are deliberately NOT part of this relation.  Constraints are a
+// separate axis that composes by UNION (conjunction) across a delegation chain
+// (see Intersect, §7), not by subset: a child's constraint set is never
+// compared to its parent's here.  Delegation mode is likewise a carrier concept
+// (AIC-JWT DA binds it); the language relation takes no mode.
+func Contains(parent, child Grant) MatchResult {
+	// Layer 1: grant validity — fail-closed on either side.  The reason is a
+	// valid CLC-A code (invalid_capability_id, invalid_params_*).
+	for _, g := range []Grant{parent, child} {
+		if err := ValidateCapabilityID(g.ID); err != nil {
+			return MatchResult{Entails: false, Reason: err.Error()}
+		}
+		if g.Params != nil {
+			if err := ValidateGrantParams(g.Params); err != nil {
+				return MatchResult{Entails: false, Reason: err.Error()}
+			}
+		}
+		if err := ValidateParamBounds(g.ParamBounds, g.Params); err != nil {
+			return MatchResult{Entails: false, Reason: err.Error()}
+		}
+	}
+
+	// Layer 2: identifier coverage — exactly the CLC-v1 path-coverage relation
+	// (matchID), parameters excluded.  The draft §4.2 keeps the core's
+	// different_namespace for scheme/action-class mismatch and collapses every
+	// other coverage failure into the layer-2 reason child_exceeds_parent.
+	if ok, reason := matchID(parent.ID, child.ID); !ok {
+		if reason == ErrDifferentNamespace.Error() {
+			return MatchResult{Entails: false, Reason: reason}
+		}
+		return MatchResult{Entails: false, Reason: ErrChildExceedsParent.Error()}
+	}
+
+	// Layer 3: parameter narrowing.
+	if len(parent.Params) == 0 && len(parent.ParamBounds) == 0 {
+		// Parent unconstrained (absent OR {}): contains any child params.
+	} else if len(child.Params) == 0 && len(child.ParamBounds) == 0 {
+		// Child unconstrained under a bounded parent: declares nothing is
+		// not "a subset of the parent's bounds" (§4.3 extra rule).
+		return MatchResult{Entails: false, Reason: ErrParamsNotNarrower.Error()}
+	} else {
+		// Every parent key must be declared by the child in the SAME
+		// representation and be within the parent's bound; a representation
+		// difference (params vs param_bounds) is a key-set difference.
+		for k, pv := range parent.Params {
+			cv, ok := child.Params[k]
+			if !ok {
+				return MatchResult{Entails: false, Reason: ErrParamsNotNarrower.Error()}
+			}
+			if containsWithin(cv, pv) != nil {
+				return MatchResult{Entails: false, Reason: ErrParamsNotNarrower.Error()}
+			}
+		}
+		for k, pb := range parent.ParamBounds {
+			cb, ok := child.ParamBounds[k]
+			if !ok {
+				return MatchResult{Entails: false, Reason: ErrParamsNotNarrower.Error()}
+			}
+			if boundWithin(cb, pb) != nil {
+				return MatchResult{Entails: false, Reason: ErrParamsNotNarrower.Error()}
+			}
+		}
+		// Key closure is symmetric for grants: a child may not add a key the
+		// parent does not declare (undeclared_param, CLC-v1 §6.2 layer 7).
+		for k := range child.Params {
+			if _, ok := parent.Params[k]; !ok {
+				return MatchResult{Entails: false, Reason: ErrParamsNotNarrower.Error()}
+			}
+		}
+		for k := range child.ParamBounds {
+			if _, ok := parent.ParamBounds[k]; !ok {
+				return MatchResult{Entails: false, Reason: ErrParamsNotNarrower.Error()}
+			}
+		}
+	}
+
+	return MatchResult{Entails: true}
+}
+
+// containsWithin reports whether a child declared value is within a parent
+// declared bound using the same JSON subset semantic as §5.2 valueSubset
+// (numbers as upper bounds, arrays as membership sets, objects per key).
+func containsWithin(childVal, parentBound any) error {
+	if childVal == nil {
+		return ErrInvalidParamsNull
+	}
+	if parentBound == nil {
+		return nil
+	}
+	if ok, reason := valueSubset(childVal, parentBound); !ok {
+		return errors.New(reason)
+	}
+	return nil
 }
 
 // Intersect combines multiple grants per CLC-v1 §6.
@@ -856,31 +982,57 @@ func Intersect(grants ...Grant) (Grant, error) {
 	}
 
 	// §9.3 layer 5: deny-when-declared — any source with an explicitly
-	// empty bound ([] or {}) denies the class before any member math.
+	// empty bound ([] or {}) denies the class before any member math.  A
+	// param_bounds Bound with an explicit empty enum denies its class too
+	// (rev CLC-1.14); an empty Bound {} does not.
 	for _, g := range grants {
 		if g.Params != nil && hasEmptyBound(g.Params) {
 			return Grant{}, ErrEmptyBoundDenies
 		}
-	}
-
-	// Start with the first grant
-	result := grants[0]
-
-	// Validate params
-	if result.Params != nil {
-		if err := ValidateGrantParams(result.Params); err != nil {
-			return Grant{}, err
+		if boundsDenyClass(g.ParamBounds) {
+			return Grant{}, ErrEmptyBoundDenies
 		}
 	}
 
-	// Merge with remaining grants
-	for _, g := range grants[1:] {
+	// rev CLC-1.14 §6.6: a key's declaration site (params vs param_bounds)
+	// must agree across the sources of one Intersect.  A key declared in
+	// params by one source and in param_bounds by another is refused.
+	paramsKeys := map[string]bool{}
+	boundsKeys := map[string]bool{}
+	for _, g := range grants {
+		for k := range g.Params {
+			paramsKeys[k] = true
+		}
+		for k := range g.ParamBounds {
+			boundsKeys[k] = true
+		}
+	}
+	for k := range boundsKeys {
+		if paramsKeys[k] {
+			return Grant{}, ErrInvalidParamsBinding
+		}
+	}
+
+	// Validate each source's params and param_bounds before merging.
+	for _, g := range grants {
 		if g.Params != nil {
 			if err := ValidateGrantParams(g.Params); err != nil {
 				return Grant{}, err
 			}
 		}
+		if g.ParamBounds != nil {
+			if err := ValidateParamBounds(g.ParamBounds, g.Params); err != nil {
+				return Grant{}, err
+			}
+		}
+	}
 
+	// Start with the first grant (its maps are never mutated: the params and
+	// param_bounds merges below always build fresh maps).
+	result := grants[0]
+
+	// Merge with remaining grants
+	for _, g := range grants[1:] {
 		// Check ID compatibility (§7 rule 2: the result must be covered by
 		// every source, so the *narrower* identifier wins).
 		//
@@ -926,6 +1078,19 @@ func Intersect(grants ...Grant) (Grant, error) {
 		} else {
 			// result is unconstrained, adopt g params
 			result.Params = g.Params
+		}
+
+		// Intersect param_bounds (§6.6 BoundMeet, rev CLC-1.14).  Keys are
+		// unioned and a shared key meets its two Bounds; an unrepresentable or
+		// empty meet is returned as that error.
+		if len(result.ParamBounds) > 0 && len(g.ParamBounds) > 0 {
+			merged, err := intersectBounds(result.ParamBounds, g.ParamBounds)
+			if err != nil {
+				return Grant{}, err
+			}
+			result.ParamBounds = merged
+		} else if len(g.ParamBounds) > 0 {
+			result.ParamBounds = cloneBoundMap(g.ParamBounds)
 		}
 
 		// Merge constraints (§7 rule 3): constraints are conjunctive, so the
@@ -1488,6 +1653,13 @@ func isParamsLevelReason(reason string) bool {
 		ErrInvalidParamsNumber.Error(),
 		ErrInvalidParamsSize.Error(),
 		ErrUnsupportedLangRev.Error(),
+		// rev CLC-1.10/1.14: the extended-bound reason codes are params-level
+		// too, so an `Authorize` over a grant carrying `param_bounds` reports
+		// the specific bound denial rather than collapsing it.
+		ErrParamsCardinality.Error(),
+		ErrParamsOutOfRange.Error(),
+		ErrParamsNotMultiple.Error(),
+		ErrInvalidParamsBinding.Error(),
 	}
 	for _, p := range prefixes {
 		if strings.HasPrefix(reason, p) {
