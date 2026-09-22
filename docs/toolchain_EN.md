@@ -125,8 +125,15 @@ go test ./ruleexec/ ./cmd/gen-rule/ -v        # rule validation, publication bou
 go run ./demo/rule-exec                        # rule → signature → validation → conditions → flow
 ```
 
-Current state: CLC corpus 105/105 in Go, Python and TypeScript (covering the
-rev CLC-1.3 `allow_unresolved` verdict and §9.3 multi-grant aggregation); P11 property 1184 cases with
+Current state: CLC corpus 120/120 in Go, Python and TypeScript (covering the
+language through rev CLC-1.13, including the `allow_unresolved` verdict,
+§9.1 multi-grant aggregation, the §13 delegation-containment relation, the
+§6.5 extended parameter bounds, the §8.5 `Resolve` consumer loop, the §7.1
+`ConstraintUnion` projection and the §13.11 `AuthorizeWithChain` check); CLC-D
+containment 64/64 vectors, 44/44 crosswalk vectors, 14/14 chain vectors and 784
+property cases with 0 violations in all three; CLC-1.10 param bounds 43/43,
+CLC-1.11 Resolve 26/26 and CLC-1.12 ConstraintUnion 12/12 in all three; P11
+property 1184 cases with
 0 failures in all three; property cases reproducible (byte-identical regeneration); OCMP
 offline vectors 12 cases covering 11/11 normative codes; rule-layer tests green; the
 TypeScript mirror 3/3; SQL parity 4/4.

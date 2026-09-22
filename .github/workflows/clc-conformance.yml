@@ -46,3 +46,43 @@ jobs:
           # so a repo-root-relative path silently skips this gate.
           CLC_PROPERTY_CASES: ${{ github.workspace }}/../capability/data/_vectors/clc-v1/property-cases.json
         run: go test -count=1 ./semantics/ -run TestIntersectionProperty -v
+
+      - name: CLC-D containment vectors (contains + reason)
+        env:
+          CLC_D_VECTORS: ${{ github.workspace }}/../capability/data/_vectors/clc-d/containment-vectors.json
+        run: go run ./cmd/contains-vectors-run/
+
+      - name: CLC-D forward-closure property
+        env:
+          CLC_D_PROPERTY_CASES: ${{ github.workspace }}/../capability/data/_vectors/clc-d/containment-property-cases.json
+        run: go test -count=1 ./semantics/ -run TestContainsProperty -v
+
+      - name: CLC-D containment cross-walk (carrier → CLC grants)
+        env:
+          CLC_D_CROSSWALK_VECTORS: ${{ github.workspace }}/../capability/data/_vectors/clc-d/containment-crosswalk-vectors.json
+        run: go run ./cmd/contains-crosswalk-run/
+
+      - name: CLC-1.10 extended parameter bounds (verdict + reason)
+        env:
+          CLC_PARAM_BOUNDS_VECTORS: ${{ github.workspace }}/../capability/data/_vectors/clc-v1/param-bounds-vectors.json
+        run: go run ./cmd/param-bounds-vectors-run/
+
+      - name: CLC-1.11 Resolve (verdict + reason + obligations)
+        env:
+          CLC_RESOLVE_VECTORS: ${{ github.workspace }}/../capability/data/_vectors/clc-v1/resolve-vectors.json
+        run: go run ./cmd/resolve-vectors-run/
+
+      - name: CLC-1.12 ConstraintUnion (normalized union)
+        env:
+          CLC_CONSTRAINT_UNION_VECTORS: ${{ github.workspace }}/../capability/data/_vectors/clc-v1/constraint-union-vectors.json
+        run: go run ./cmd/constraint-union-vectors-run/
+
+      - name: CLC-1.14 BoundMeet (param_bounds intersection)
+        env:
+          CLC_PARAM_BOUNDS_MEET_VECTORS: ${{ github.workspace }}/../capability/data/_vectors/clc-v1/param-bounds-meet-vectors.json
+        run: go run ./cmd/param-bounds-meet-vectors-run/
+
+      - name: CLC-1.13 AuthorizeWithChain (fused chain check)
+        env:
+          CLC_AUTHORIZE_CHAIN_VECTORS: ${{ github.workspace }}/../capability/data/_vectors/clc-d/authorize-chain-vectors.json
+        run: go run ./cmd/authorize-chain-vectors-run/
