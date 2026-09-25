@@ -48,8 +48,8 @@ func TestContains(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := Contains(tt.parent, tt.child)
-			if got.Entails != tt.want {
-				t.Errorf("Contains() = %v, want %v (reason: %s)", got.Entails, tt.want, got.Reason)
+			if got.Contains != tt.want {
+				t.Errorf("Contains() = %v, want %v (reason: %s)", got.Contains, tt.want, got.Reason)
 			}
 			if tt.reason != "" && got.Reason != tt.reason {
 				t.Errorf("Contains() reason = %q, want %q", got.Reason, tt.reason)
@@ -81,7 +81,7 @@ func TestContainsIgnoresConstraints(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			parent := Grant{ID: G, Constraints: tt.parentC}
 			child := Grant{ID: G, Constraints: tt.childC}
-			if got := Contains(parent, child); !got.Entails {
+			if got := Contains(parent, child); !got.Contains {
 				t.Errorf("Contains() = false (%s), want true: constraints must not affect containment", got.Reason)
 			}
 		})

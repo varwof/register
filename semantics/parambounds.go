@@ -601,13 +601,21 @@ func boundMeet(a, b any) (map[string]any, error) {
 		res, err = enumMeet(am, bm)
 	case af == "nested" && bf == "nested":
 		res, err = nestedMeet(am, bm)
-	case af == "numeric" && bf == "enum":
-		res, err = numericEnumMeet(am, bm)
-	case af == "enum" && bf == "numeric":
-		res, err = numericEnumMeet(bm, am)
+	case (af == "numeric" && bf == "enum") || (af == "enum" && bf == "numeric"):
+		// rev CLC-1.15 §6.6: a cross-family numeric × enum meet has no sound
+		// representation — the CLC-1.14 filtered-enum result was broader than
+		// either source (it accepted array requests, e.g. [3], that the numeric
+		// side fail-closes at §6.5 layer 9).  Refused in either source order
+		// and regardless of whether any member falls inside the numeric range:
+		// the family clash is decided before any member or range math.
+		return nil, ErrInvalidParamsBinding
 	case af == "nested" || bf == "nested":
-		// scalar (numeric/enum) ∩ object has no common value.
-		return nil, ErrNoOverlap
+		// scalar (numeric/enum) ∩ object (nested), either order: refused like
+		// the numeric × enum pair — no single-family Bound can carry both the
+		// scalar side's shape constraint and the object recursion (§6.6 rev
+		// CLC-1.15; design-notes D12).  The family clash is decided before any
+		// member, range or key-set math.
+		return nil, ErrInvalidParamsBinding
 	default:
 		return nil, ErrInvalidParamsBinding
 	}
@@ -711,47 +719,6 @@ func enumMeet(a, b map[string]any) (map[string]any, error) {
 		if mx, ok := res["max_items"].(float64); ok && mn > mx {
 			return nil, ErrNoOverlap
 		}
-	}
-	return res, nil
-}
-
-// numericEnumMeet meets a numeric bound (num) with an enum bound (en).  The
-// enum member list is filtered by the numeric range; the result is enum-family.
-func numericEnumMeet(num, en map[string]any) (map[string]any, error) {
-	e, ok := en["enum"].([]any)
-	if !ok {
-		// cardinality-only enum cannot be met with a numeric scalar bound.
-		return nil, ErrInvalidParamsBinding
-	}
-	filtered := []any{}
-	for _, mem := range e {
-		f, isNum := mem.(float64)
-		if !isNum {
-			continue
-		}
-		ok := true
-		if mn, has := num["min"].(float64); has && f < mn {
-			ok = false
-		}
-		if mx, has := num["max"].(float64); has && f > mx {
-			ok = false
-		}
-		if st, has := num["step"].(float64); has && !isMultipleOf(f, st) {
-			ok = false
-		}
-		if ok {
-			filtered = append(filtered, mem)
-		}
-	}
-	if len(filtered) == 0 {
-		return nil, ErrNoOverlap
-	}
-	res := map[string]any{"enum": canonicalEnumMembers(filtered)}
-	if v, ok := en["min_items"]; ok {
-		res["min_items"] = v
-	}
-	if v, ok := en["max_items"]; ok {
-		res["max_items"] = v
 	}
 	return res, nil
 }

@@ -88,8 +88,8 @@ func TestContainsParamBoundsNarrowing(t *testing.T) {
 	}
 	for _, c := range cases {
 		got := Contains(c.parent, c.child)
-		if got.Entails != c.contain {
-			t.Errorf("%s: got contains=%v reason=%q, want %v", c.name, got.Entails, got.Reason, c.contain)
+		if got.Contains != c.contain {
+			t.Errorf("%s: got contains=%v reason=%q, want %v", c.name, got.Contains, got.Reason, c.contain)
 		}
 	}
 }
@@ -112,12 +112,16 @@ func TestIntersectBoundMeet(t *testing.T) {
 		{"numeric empty meet", b(map[string]any{"min": 10.0}), b(map[string]any{"max": 5.0}), "", ErrNoOverlap},
 		{"enum intersect", b(map[string]any{"enum": []any{1.0, 2.0, 3.0}}), b(map[string]any{"enum": []any{2.0, 3.0, 4.0}}), `{"enum":[2,3]}`, nil},
 		{"enum disjoint", b(map[string]any{"enum": []any{1.0}}), b(map[string]any{"enum": []any{2.0}}), "", ErrNoOverlap},
-		{"numeric∩enum reduce", b(map[string]any{"min": 2.0, "max": 4.0}), b(map[string]any{"enum": []any{1.0, 3.0, 5.0}}), `{"enum":[3]}`, nil},
+		{"numeric∩enum refused", b(map[string]any{"min": 2.0, "max": 4.0}), b(map[string]any{"enum": []any{1.0, 3.0, 5.0}}), "", ErrInvalidParamsBinding},
+		{"enum∩numeric refused (order-independent)", b(map[string]any{"enum": []any{1.0, 3.0, 5.0}}), b(map[string]any{"min": 2.0, "max": 4.0}), "", ErrInvalidParamsBinding},
+		{"numeric∩enum refused even when no member is in range", b(map[string]any{"min": 10.0, "max": 20.0}), b(map[string]any{"enum": []any{1.0, 3.0, 5.0}}), "", ErrInvalidParamsBinding},
 		{"numeric∩cardinality-only", b(map[string]any{"max": 5.0}), b(map[string]any{"min_items": 1.0}), "", ErrInvalidParamsBinding},
 		{"optional conjunction", b(map[string]any{"max": 5.0, "optional": true}), b(map[string]any{"max": 3.0}), `{"max":3}`, nil},
 		{"optional both", b(map[string]any{"max": 5.0, "optional": true}), b(map[string]any{"max": 3.0, "optional": true}), `{"max":3,"optional":true}`, nil},
 		{"nested recurse", b(map[string]any{"nested": map[string]any{"a": map[string]any{"max": 100.0}}}), b(map[string]any{"nested": map[string]any{"a": map[string]any{"max": 50.0}}}), `{"nested":{"a":{"max":50}}}`, nil},
-		{"scalar∩nested", b(map[string]any{"max": 5.0}), b(map[string]any{"nested": map[string]any{"a": map[string]any{"max": 5.0}}}), "", ErrNoOverlap},
+		{"scalar∩nested refused", b(map[string]any{"max": 5.0}), b(map[string]any{"nested": map[string]any{"a": map[string]any{"max": 5.0}}}), "", ErrInvalidParamsBinding},
+		{"nested∩scalar refused (order-independent)", b(map[string]any{"nested": map[string]any{"a": map[string]any{"max": 5.0}}}), b(map[string]any{"max": 5.0}), "", ErrInvalidParamsBinding},
+		{"enum∩nested refused", b(map[string]any{"enum": []any{3.0}}), b(map[string]any{"nested": map[string]any{"a": map[string]any{"max": 5.0}}}), "", ErrInvalidParamsBinding},
 		{"empty bound identity", b(map[string]any{}), b(map[string]any{"max": 7.0}), `{"max":7}`, nil},
 	}
 	for _, c := range cases {
@@ -145,8 +149,9 @@ func TestBoundMeetProperties(t *testing.T) {
 	r := rand.New(rand.NewSource(11))
 	// Two bounds of the SAME family (plus the empty identity): boundWithin is
 	// the §13.4.3 same-family narrowing check, so the law "meet is within both
-	// sources" is stated over same-family pairs.  (The numeric∩enum reduction
-	// is a different, cross-family result and is covered by the table test.)
+	// sources" is stated over same-family pairs.  (A cross-family numeric ×
+	// enum pair is refused outright since rev CLC-1.15, §6.6 — covered by the
+	// table test above.)
 	randBound := func(fam int) map[string]any {
 		if r.Intn(4) == 0 {
 			return map[string]any{}

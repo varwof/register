@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"sort"
 	"strings"
 
 	"github.com/varwof/register/semantics"
@@ -74,12 +73,11 @@ func checkResult(exp Expectation, got semantics.Grant) string {
 		}
 	}
 	if exp.ResultConstraints != nil {
-		want := append([]string(nil), exp.ResultConstraints...)
-		have := append([]string(nil), got.Constraints...)
-		sort.Strings(want)
-		sort.Strings(have)
-		if strings.Join(want, "\x00") != strings.Join(have, "\x00") {
-			return fmt.Sprintf("result_constraints want=%v got=%v", want, have)
+		// §7.1 ConstraintUnion: assert the exact manifest order (UTF-8 byte
+		// sequence), no pre-sort (rev CLC-1.15).
+		have := got.Constraints
+		if strings.Join(exp.ResultConstraints, "\x00") != strings.Join(have, "\x00") {
+			return fmt.Sprintf("result_constraints want=%v got=%v", exp.ResultConstraints, got)
 		}
 	}
 	return ""
@@ -245,10 +243,10 @@ func runVector(v Vector) Result {
 			r.ReasonGot = canonicalReason(result.Reason)
 			verdictOK = (r.Got == v.Expect.Verdict)
 			if v.Expect.Unresolved != nil {
-				want := append([]string(nil), v.Expect.Unresolved...)
-				sort.Strings(want)
-				if strings.Join(want, "\x00") != strings.Join(result.Unresolved, "\x00") {
-					r.Note = fmt.Sprintf("unresolved want=%v got=%v", want, result.Unresolved)
+				// §8.4 residual obligations: assert the exact manifest order
+				// (UTF-8 byte sequence, §7.1), no pre-sort (rev CLC-1.15).
+				if strings.Join(v.Expect.Unresolved, "\x00") != strings.Join(result.Unresolved, "\x00") {
+					r.Note = fmt.Sprintf("unresolved want=%v got=%v", v.Expect.Unresolved, result.Unresolved)
 					verdictOK = false
 				}
 			}
@@ -272,13 +270,12 @@ func runVector(v Vector) Result {
 		r.Got = result.Verdict
 		r.ReasonGot = canonicalReason(result.Reason)
 		verdictOK = (r.Got == v.Expect.Verdict)
-		// §8.4 residual obligations: asserted when the vector declares them
-		// (rev CLC-1.2).  Both sides are sorted+deduped before comparison.
+		// §8.4 residual obligations: asserted when the vector declares them.
+		// The corpus asserts the exact manifest order (UTF-8 byte sequence,
+		// §7.1), so no pre-sort here (rev CLC-1.15).
 		if v.Expect.Unresolved != nil {
-			want := append([]string(nil), v.Expect.Unresolved...)
-			sort.Strings(want)
-			if strings.Join(want, "\x00") != strings.Join(result.Unresolved, "\x00") {
-				r.Note = fmt.Sprintf("unresolved want=%v got=%v", want, result.Unresolved)
+			if strings.Join(v.Expect.Unresolved, "\x00") != strings.Join(result.Unresolved, "\x00") {
+				r.Note = fmt.Sprintf("unresolved want=%v got=%v", v.Expect.Unresolved, result.Unresolved)
 				verdictOK = false
 			}
 		}

@@ -59,6 +59,16 @@ type MatchResult struct {
 	Reason  string
 }
 
+// ContainmentResult is the §13.3 return shape of Contains — the JSON object
+// {contains, reason}.  Rev CLC-1.15: the public surface no longer reuses the
+// entailment's MatchResult{Entails}, so callers (and the corpus runners) read
+// the §13.3 field names directly and no translation layer is needed.  Reason
+// is empty on success and carries the first failing layer's code on failure.
+type ContainmentResult struct {
+	Contains bool   `json:"contains"`
+	Reason   string `json:"reason,omitempty"`
+}
+
 var (
 	ErrUnsupportedWildcard  = errors.New("unsupported_wildcard")
 	ErrInvalidCapabilityID  = errors.New("invalid_capability_id")
@@ -274,7 +284,12 @@ func paramsDepth(v any, depth int) int {
 // json.Marshal would over-count `&`/`<`/`>` and U+2028/U+2029.  The bytes
 // change for `&`/`<`/`>` material — a
 // compatibility note for stored digests — while CLC-1.4/1.5 inputs still read.)
-const CLCRevision = "CLC-1.14"
+// (rev CLC-1.15 · 2026-09-25: corrective — the §6.6 cross-family numeric ×
+// enum meet is refused (invalid_params_binding) in either source order instead
+// of reducing to the filtered enum; Contains returns the §13.3
+// ContainmentResult{Contains, Reason} shape.  Inputs without param_bounds are
+// unaffected; CLC-1.14 and earlier inputs still read.)
+const CLCRevision = "CLC-1.15"
 
 const (
 	// maxParamsSerializedBytes bounds the JCS-serialized params size
@@ -869,7 +884,9 @@ func Entails(grant Grant, op Operation) MatchResult {
 // behavior: an operation that fits the parent proves nothing about a child's
 // runtime behavior (CLC-v1 §12; the extension keeps that scope).  If any
 // layer of §4 fails, Contains is false with the first failing layer's reason
-// code (§4 layer order).
+// code (§4 layer order).  The result is the §13.3 ContainmentResult shape
+// {contains, reason} (rev CLC-1.15) — the relation signature's own field
+// names, no MatchResult reuse and no runner-side translation.
 //
 // Layer semantics match the extension draft:
 //   - layer 1: both grants valid (identifier + params grammar);
@@ -884,20 +901,20 @@ func Entails(grant Grant, op Operation) MatchResult {
 // (see Intersect, §7), not by subset: a child's constraint set is never
 // compared to its parent's here.  Delegation mode is likewise a carrier concept
 // (AIC-JWT DA binds it); the language relation takes no mode.
-func Contains(parent, child Grant) MatchResult {
+func Contains(parent, child Grant) ContainmentResult {
 	// Layer 1: grant validity — fail-closed on either side.  The reason is a
 	// valid CLC-A code (invalid_capability_id, invalid_params_*).
 	for _, g := range []Grant{parent, child} {
 		if err := ValidateCapabilityID(g.ID); err != nil {
-			return MatchResult{Entails: false, Reason: err.Error()}
+			return ContainmentResult{Contains: false, Reason: err.Error()}
 		}
 		if g.Params != nil {
 			if err := ValidateGrantParams(g.Params); err != nil {
-				return MatchResult{Entails: false, Reason: err.Error()}
+				return ContainmentResult{Contains: false, Reason: err.Error()}
 			}
 		}
 		if err := ValidateParamBounds(g.ParamBounds, g.Params); err != nil {
-			return MatchResult{Entails: false, Reason: err.Error()}
+			return ContainmentResult{Contains: false, Reason: err.Error()}
 		}
 	}
 
@@ -907,9 +924,9 @@ func Contains(parent, child Grant) MatchResult {
 	// other coverage failure into the layer-2 reason child_exceeds_parent.
 	if ok, reason := matchID(parent.ID, child.ID); !ok {
 		if reason == ErrDifferentNamespace.Error() {
-			return MatchResult{Entails: false, Reason: reason}
+			return ContainmentResult{Contains: false, Reason: reason}
 		}
-		return MatchResult{Entails: false, Reason: ErrChildExceedsParent.Error()}
+		return ContainmentResult{Contains: false, Reason: ErrChildExceedsParent.Error()}
 	}
 
 	// Layer 3: parameter narrowing.
@@ -918,7 +935,7 @@ func Contains(parent, child Grant) MatchResult {
 	} else if len(child.Params) == 0 && len(child.ParamBounds) == 0 {
 		// Child unconstrained under a bounded parent: declares nothing is
 		// not "a subset of the parent's bounds" (§4.3 extra rule).
-		return MatchResult{Entails: false, Reason: ErrParamsNotNarrower.Error()}
+		return ContainmentResult{Contains: false, Reason: ErrParamsNotNarrower.Error()}
 	} else {
 		// Every parent key must be declared by the child in the SAME
 		// representation and be within the parent's bound; a representation
@@ -926,36 +943,36 @@ func Contains(parent, child Grant) MatchResult {
 		for k, pv := range parent.Params {
 			cv, ok := child.Params[k]
 			if !ok {
-				return MatchResult{Entails: false, Reason: ErrParamsNotNarrower.Error()}
+				return ContainmentResult{Contains: false, Reason: ErrParamsNotNarrower.Error()}
 			}
 			if containsWithin(cv, pv) != nil {
-				return MatchResult{Entails: false, Reason: ErrParamsNotNarrower.Error()}
+				return ContainmentResult{Contains: false, Reason: ErrParamsNotNarrower.Error()}
 			}
 		}
 		for k, pb := range parent.ParamBounds {
 			cb, ok := child.ParamBounds[k]
 			if !ok {
-				return MatchResult{Entails: false, Reason: ErrParamsNotNarrower.Error()}
+				return ContainmentResult{Contains: false, Reason: ErrParamsNotNarrower.Error()}
 			}
 			if boundWithin(cb, pb) != nil {
-				return MatchResult{Entails: false, Reason: ErrParamsNotNarrower.Error()}
+				return ContainmentResult{Contains: false, Reason: ErrParamsNotNarrower.Error()}
 			}
 		}
 		// Key closure is symmetric for grants: a child may not add a key the
 		// parent does not declare (undeclared_param, CLC-v1 §6.2 layer 7).
 		for k := range child.Params {
 			if _, ok := parent.Params[k]; !ok {
-				return MatchResult{Entails: false, Reason: ErrParamsNotNarrower.Error()}
+				return ContainmentResult{Contains: false, Reason: ErrParamsNotNarrower.Error()}
 			}
 		}
 		for k := range child.ParamBounds {
 			if _, ok := parent.ParamBounds[k]; !ok {
-				return MatchResult{Entails: false, Reason: ErrParamsNotNarrower.Error()}
+				return ContainmentResult{Contains: false, Reason: ErrParamsNotNarrower.Error()}
 			}
 		}
 	}
 
-	return MatchResult{Entails: true}
+	return ContainmentResult{Contains: true}
 }
 
 // containsWithin reports whether a child declared value is within a parent
@@ -1122,7 +1139,10 @@ func intersectValue(a, b any) (any, error) {
 		var result []any
 		for _, ai := range av {
 			for _, bi := range bv {
-				if fmt.Sprintf("%v", ai) == fmt.Sprintf("%v", bi) {
+				// JSON type-sensitive element equality (rev CLC-1.15): 1,
+				// True and "1" are distinct members (§6.5 layer 8).  The old
+				// fmt.Sprintf("%v") comparison collapsed them.
+				if enumEqual(ai, bi) {
 					result = append(result, ai)
 					break
 				}
@@ -1162,7 +1182,12 @@ func intersectValue(a, b any) (any, error) {
 		}
 		return result, nil
 	default:
-		if fmt.Sprintf("%v", a) == fmt.Sprintf("%v", b) {
+		// JSON type-sensitive equality (rev CLC-1.15): a string must not
+		// intersect a number or bool with the same printed form ("1" vs 1,
+		// "true" vs true).  The old fmt.Sprintf("%v") comparison collapsed
+		// types and merged grants that must deny no_overlap (§7 rule 6 / §6.5
+		// layer 8; cross-type audit 2026-09-25).
+		if enumEqual(a, b) {
 			return a, nil
 		}
 		return nil, ErrNoOverlap

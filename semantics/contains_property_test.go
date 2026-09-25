@@ -54,7 +54,7 @@ func TestContainsProperty(t *testing.T) {
 	opChecks := 0
 	for _, c := range file.Cases {
 		res := Contains(c.Parent, c.Child)
-		if res.Entails {
+		if res.Contains {
 			containedPairs++
 		}
 		for _, op := range file.Ops {
@@ -62,7 +62,7 @@ func TestContainsProperty(t *testing.T) {
 			if !Entails(c.Child, op).Entails {
 				continue
 			}
-			if res.Entails && !Entails(c.Parent, op).Entails {
+			if res.Contains && !Entails(c.Parent, op).Entails {
 				t.Errorf("%s: Contains(P,C) true and Entails(C,op) true but Entails(P,op) false "+
 					"(parent=%+v child=%+v op=%+v)", c.ID, c.Parent, c.Child, op)
 			}

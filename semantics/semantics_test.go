@@ -124,3 +124,42 @@ func TestNonFiniteParamsAreRejected(t *testing.T) {
 		t.Fatalf("NaN under a bound: got %+v, want deny/invalid_params_number", d)
 	}
 }
+
+// TestIntersectCrossType pins the CLC-1.15 cross-type audit (2026-09-25):
+// params intersection is JSON type-sensitive.  Strings, numbers and bools with
+// the same printed form ("1" vs 1, "true" vs true, "1.5" vs 1.5) are distinct
+// values (§6.5 layer 8); intersecting two grants that constrain one key to
+// such values must deny no_overlap instead of merging into a wider grant.
+func TestIntersectCrossType(t *testing.T) {
+	g := func(params map[string]any) Grant {
+		return Grant{ID: "std/database-v1:query:SELECT", Params: params}
+	}
+	deny := []struct {
+		name string
+		a, b map[string]any
+	}{
+		{"string vs number", map[string]any{"x": "1"}, map[string]any{"x": float64(1)}},
+		{"string vs bool", map[string]any{"x": "true"}, map[string]any{"x": true}},
+		{"list string vs number", map[string]any{"x": []any{"1"}}, map[string]any{"x": []any{float64(1)}}},
+		{"list bool vs string", map[string]any{"x": []any{true}}, map[string]any{"x": []any{"true"}}},
+		{"list number vs string", map[string]any{"x": []any{float64(1.5)}}, map[string]any{"x": []any{"1.5"}}},
+		{"nested scalar", map[string]any{"x": map[string]any{"a": "1"}}, map[string]any{"x": map[string]any{"a": float64(1)}}},
+	}
+	for _, tt := range deny {
+		t.Run(tt.name, func(t *testing.T) {
+			if _, err := Intersect(g(tt.a), g(tt.b)); !errors.Is(err, ErrNoOverlap) {
+				t.Fatalf("Intersect(%q) = %v, want ErrNoOverlap", tt.name, err)
+			}
+		})
+	}
+
+	// Same-type numeric values are one value: [1] ∩ [1.0] = [1] (§2.4).
+	m, err := Intersect(g(map[string]any{"x": []any{float64(1)}}),
+		g(map[string]any{"x": []any{float64(1.0)}}))
+	if err != nil {
+		t.Fatalf("Intersect numeric same-value: %v", err)
+	}
+	if got := m.Params["x"]; len(got.([]any)) != 1 {
+		t.Fatalf("Intersect numeric same-value = %v, want len 1", got)
+	}
+}

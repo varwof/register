@@ -33,7 +33,7 @@ func AuthorizeWithChain(chain []Grant, op Operation) Decision {
 		return Decision{Verdict: VerdictDeny, Reason: ErrAbsentSource.Error()}
 	}
 	for i := 0; i+1 < len(chain); i++ {
-		if r := Contains(chain[i], chain[i+1]); !r.Entails {
+		if r := Contains(chain[i], chain[i+1]); !r.Contains {
 			return Decision{Verdict: VerdictDeny, Reason: r.Reason}
 		}
 	}

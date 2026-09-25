@@ -55,7 +55,9 @@ func main() {
 	fail := 0
 	for _, v := range vectors {
 		r := semantics.Contains(v.Parent, v.Child)
-		gotContains := r.Entails
+		// No translation: Contains returns the §13.3 shape {contains, reason}
+		// (rev CLC-1.15), so the runner asserts on the relation's own fields.
+		gotContains := r.Contains
 		gotReason := canonicalReason(r.Reason)
 		ok := gotContains == v.Expect.Contains &&
 			(v.Expect.Contains || len(v.Expect.Reason) == 0 || gotReason == v.Expect.Reason)

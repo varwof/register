@@ -89,7 +89,7 @@ func runContainVector(v ContainVector) Result {
 	}
 
 	res := semantics.Contains(parent, child)
-	if res.Entails {
+	if res.Contains {
 		r.Got = "contains"
 	} else {
 		r.Got = "not_contains"
@@ -98,8 +98,8 @@ func runContainVector(v ContainVector) Result {
 		}
 	}
 	r.Note = fmt.Sprintf("P=%s C=%s", parent.ID, child.ID)
-	r.Pass = res.Entails == v.Expect.Contains
-	if r.Pass && !res.Entails && canonicalReason(v.Expect.Reason) != "" {
+	r.Pass = res.Contains == v.Expect.Contains
+	if r.Pass && !res.Contains && canonicalReason(v.Expect.Reason) != "" {
 		r.Pass = canonicalReason(res.Reason) == canonicalReason(v.Expect.Reason)
 	}
 	return r
