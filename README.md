@@ -118,7 +118,7 @@ asserted, and the process exits non-zero on any mismatch**:
 CLC_VECTORS=../capability/data/_vectors/clc-v1/vectors.json go run ./cmd/vectors-run/
 ```
 
-The evidence side has its own corpus and runner (CLC-E, 30 vectors):
+The evidence side has its own corpus and runner (CLC-E, 32 vectors):
 
 ```bash
 CLC_EVIDENCE_VECTORS=../capability/data/_vectors/clc-v1/evidence-vectors.json go run ./cmd/evidence-vectors-run/
