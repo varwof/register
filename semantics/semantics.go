@@ -700,15 +700,6 @@ func valueSubset(opVal, grantVal any) (bool, string) {
 	}
 
 	switch gv := grantVal.(type) {
-	case float64:
-		ov, ok := opVal.(float64)
-		if !ok {
-			return false, ErrParamsExceedGrant.Error()
-		}
-		if ov > gv {
-			return false, ErrParamsExceedGrant.Error()
-		}
-		return true, ""
 	case string:
 		ov, ok := opVal.(string)
 		if !ok || ov != gv {
@@ -779,12 +770,62 @@ func valueSubset(opVal, grantVal any) (bool, string) {
 		}
 		return true, ""
 	default:
-		// Exact equality
-		if fmt.Sprintf("%v", opVal) != fmt.Sprintf("%v", grantVal) {
+		// Numbers share one branch whatever their host representation
+		// (rev CLC-1.15): the grant value is an upper bound (§9.3 layers
+		// 8-9) and the operation value must be a number of the same JSON
+		// type family — a bool, string or null never satisfies it.
+		if gn, ok := numericValue(gv); ok {
+			on, ok := numericValue(opVal)
+			if !ok {
+				return false, ErrParamsExceedGrant.Error()
+			}
+			if on > gn {
+				return false, ErrParamsExceedGrant.Error()
+			}
+			return true, ""
+		}
+		// Exact equality for every other value, JSON type-sensitive
+		// (§6.5 layer 8: 1, true and "1" are distinct values).  The old
+		// fmt.Sprintf("%v") comparison collapsed types and let the string
+		// "50" satisfy the number 50 (fail-open).
+		if !enumEqual(opVal, grantVal) {
 			return false, ErrParamsExceedGrant.Error()
 		}
 		return true, ""
 	}
+}
+
+// numericValue reports v as a JSON number value and its magnitude.  The host
+// representation is an encoding detail, not semantics (rev CLC-1.15): every Go
+// numeric type is the same JSON number, and a bool is not a number.
+func numericValue(v any) (float64, bool) {
+	switch n := v.(type) {
+	case float64:
+		return n, true
+	case float32:
+		return float64(n), true
+	case int:
+		return float64(n), true
+	case int8:
+		return float64(n), true
+	case int16:
+		return float64(n), true
+	case int32:
+		return float64(n), true
+	case int64:
+		return float64(n), true
+	case uint:
+		return float64(n), true
+	case uint8:
+		return float64(n), true
+	case uint16:
+		return float64(n), true
+	case uint32:
+		return float64(n), true
+	case uint64:
+		return float64(n), true
+	}
+	return 0, false
 }
 
 // enumEqual reports exact JSON-value equality, used for set membership in
@@ -1458,7 +1499,7 @@ func CheckConstraint(c string, op Operation) error {
 			return nil
 		}
 		maxVal, _ := strconv.Atoi(parts[2])
-		rows, ok := op.Params["max_rows"].(float64)
+		rowsAny, ok := op.Params["max_rows"]
 		if !ok {
 			// Op-absent max_rows → fail closed (§8.1 value-grammar table).
 			return fmt.Errorf("max_rows:violated")
@@ -1466,6 +1507,10 @@ func CheckConstraint(c string, op Operation) error {
 		// Op-side value domain (rev CLC-1.4): a row count must be a finite
 		// non-negative integer; anything else cannot be shown to satisfy the
 		// constraint, so it fails closed instead of passing unchecked.
+		rows, ok := numericValue(rowsAny)
+		if !ok {
+			return fmt.Errorf("max_rows:violated")
+		}
 		if math.IsNaN(rows) || math.IsInf(rows, 0) || rows != math.Trunc(rows) || rows < 0 {
 			return fmt.Errorf("max_rows:violated")
 		}
