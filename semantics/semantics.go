@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"math/big"
 	"regexp"
 	"sort"
 	"strconv"
@@ -105,6 +106,9 @@ func rejectNonFinite(v any) error {
 	switch val := v.(type) {
 	case float64:
 		if math.IsNaN(val) || math.IsInf(val, 0) {
+			return ErrInvalidParamsNumber
+		}
+		if val == math.Trunc(val) && math.Abs(val) > ijsonMaxInteger {
 			return ErrInvalidParamsNumber
 		}
 	case []any:
@@ -289,7 +293,7 @@ func paramsDepth(v any, depth int) int {
 // of reducing to the filtered enum; Contains returns the §13.3
 // ContainmentResult{Contains, Reason} shape.  Inputs without param_bounds are
 // unaffected; CLC-1.14 and earlier inputs still read.)
-const CLCRevision = "CLC-1.15"
+const CLCRevision = "CLC-1.16"
 
 const (
 	// maxParamsSerializedBytes bounds the JCS-serialized params size
@@ -518,14 +522,36 @@ func walkParamsValue(dec *json.Decoder, buf *bytes.Buffer, depth int, dupErr, nu
 
 var numericLiteralRE = regexp.MustCompile(`^-?(0|[1-9][0-9]*)(\.[0-9]+)?([eE][+-]?[0-9]+)?$`)
 
-// checkParamsNumber rejects non-finite or over-precision numeric params
-// (§6.2 step 3).
+// ijsonMaxInteger is the largest integer magnitude binary64 represents exactly
+// (2^53 - 1).  I-JSON [RFC7493] §6 names this range as interoperable.
+const ijsonMaxInteger = 1<<53 - 1
+
+// exceedsIJSONIntegerBound reports whether lit is an integer-valued JSON number
+// whose magnitude exceeds 2^53 - 1.  Such a value has no exact binary64
+// representation, so accepting it would round the operand and decide `op ≤ grant`
+// on a value the sender never wrote.  The literal is read as an exact rational,
+// so a value written with a fraction or an exponent ("1.0", "9.007199254740993e15")
+// is still recognized as integer-valued.
+func exceedsIJSONIntegerBound(lit string) bool {
+	r, ok := new(big.Rat).SetString(lit)
+	if !ok || r.Denom().Cmp(big.NewInt(1)) != 0 {
+		return false
+	}
+	limit := big.NewInt(ijsonMaxInteger)
+	return new(big.Int).Abs(r.Num()).Cmp(limit) > 0
+}
+
+// checkParamsNumber rejects non-finite, out-of-I-JSON-range or over-precision
+// numeric params (§6.2 step 3).
 func checkParamsNumber(lit string) error {
 	if !numericLiteralRE.MatchString(lit) {
 		return ErrInvalidParamsNumber
 	}
 	f, err := strconv.ParseFloat(lit, 64)
 	if err != nil || !isFinite(f) {
+		return ErrInvalidParamsNumber
+	}
+	if exceedsIJSONIntegerBound(lit) {
 		return ErrInvalidParamsNumber
 	}
 	if significantDigits(lit) > 17 {
@@ -1455,6 +1481,14 @@ func ValidateConstraint(c string) error {
 		// Strict JSON non-negative integer, exactly one token (§8.1
 		// value-grammar table).  parts[2:] must be empty beyond parts[2].
 		if len(parts) != 3 || !isStrictJSONInteger(parts[2]) {
+			return fmt.Errorf("%w: %s", ErrInvalidConstraint, c)
+		}
+		// The constraint operand is not exempt from the I-JSON bound (§8.1
+		// max_rows × key-closure reconciliation): an integer magnitude above
+		// 2^53-1 has no exact binary64 representation, so binding it would
+		// round the ceiling and decide "op ≤ grant" on a value the signer
+		// never wrote.  Refused as invalid_constraint, the §8.1 reason code.
+		if exceedsIJSONIntegerBound(parts[2]) {
 			return fmt.Errorf("%w: %s", ErrInvalidConstraint, c)
 		}
 	case "time":

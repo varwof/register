@@ -5,4 +5,4 @@
 package register
 
 // Version is the package version, set via -ldflags -X github.com/varwof/register.Version=x.y.z.
-var Version = "0.1.0"
+var Version = "0.8.0"

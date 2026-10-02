@@ -20,26 +20,34 @@ func ValidateSchemeParams(scheme, capability string, raw json.RawMessage) error 
 	if len(raw) == 0 {
 		return nil
 	}
-	switch {
-	case scheme == "std/database-v1" && capability == "query:SELECT":
-		return validateDatabaseSelectParams(raw)
+	if scheme != "std/database-v1" {
+		return nil
+	}
+	switch capability {
+	case "query:SELECT", "query:UPDATE", "query:DELETE":
+		return validateDatabaseTableParams(capability, raw)
 	default:
 		return nil
 	}
 }
 
-// validateDatabaseSelectParams implements the database-v1 SELECT contract:
-// tables / columns / row_filter / limit.
-func validateDatabaseSelectParams(raw json.RawMessage) error {
+// validateDatabaseTableParams implements the database-v1 contract for the
+// four table-scoped capabilities that share the tables / columns / row_filter
+// shape (query:SELECT / query:UPDATE / query:DELETE).  The predicate-allowlist
+// semantics mirror the gateway's Scoped.filterable: a declared filter_columns
+// list binds first (even when the returnable list is "*"), then the returnable
+// column set, and a "*" or unlisted columns entry means unrestricted.
+func validateDatabaseTableParams(capability string, raw json.RawMessage) error {
 	var p struct {
 		Tables        []string            `json:"tables"`
 		Columns       map[string]any      `json:"columns"`
-		FilterColumns map[string][]string `json:"filter_columns,omitempty"`
+		FilterColumns map[string][]string `json:"filter_columns"`
 		RowFilter     map[string]any      `json:"row_filter"`
 		Limit         *struct {
 			Max int `json:"max"`
 		} `json:"limit"`
-		Aggregate *bool `json:"aggregate"`
+		Aggregate *bool     `json:"aggregate"`
+		OrderBy   *[]string `json:"order_by"`
 	}
 	if err := json.Unmarshal(raw, &p); err != nil {
 		return fmt.Errorf("malformed params: %w", err)
@@ -47,9 +55,12 @@ func validateDatabaseSelectParams(raw json.RawMessage) error {
 	if len(p.Tables) == 0 || len(p.Tables) > 32 {
 		return fmt.Errorf("tables must contain 1..32 entries")
 	}
+	// nil == no column restriction.  This is exactly a "*" entry, and also the
+	// meaning of a table the grant names in `tables` but not in `columns`
+	// (the gateway's ColumnMap.isStar returns true for both).
 	allowed := make(map[string]map[string]bool, len(p.Tables))
 	for _, t := range p.Tables {
-		allowed[t] = map[string]bool{}
+		allowed[t] = nil
 	}
 	for tbl, v := range p.Columns {
 		if _, ok := allowed[tbl]; !ok {
@@ -60,27 +71,25 @@ func validateDatabaseSelectParams(raw json.RawMessage) error {
 			if cv != "*" {
 				return fmt.Errorf("columns[%q] must be an array or \"*\"", tbl)
 			}
-			allowed[tbl] = nil // nil == star
 		case []any:
-			if len(cv) == 0 {
-				return fmt.Errorf("columns[%q] must not be empty", tbl)
-			}
+			set := make(map[string]bool, len(cv))
 			for _, c := range cv {
 				cs, ok := c.(string)
 				if !ok {
 					return fmt.Errorf("columns[%q] must be strings", tbl)
 				}
-				allowed[tbl][cs] = true
+				set[cs] = true
 			}
+			if len(set) == 0 {
+				return fmt.Errorf("columns[%q] must not be empty", tbl)
+			}
+			allowed[tbl] = set
 		default:
 			return fmt.Errorf("columns[%q] must be an array or \"*\"", tbl)
 		}
 	}
 	// filter-only columns: usable in WHERE but never returned.
 	filterAllowed := make(map[string]map[string]bool, len(p.Tables))
-	for _, t := range p.Tables {
-		filterAllowed[t] = map[string]bool{}
-	}
 	for tbl, cols := range p.FilterColumns {
 		if _, ok := allowed[tbl]; !ok {
 			return fmt.Errorf("filter_columns references unlisted table %q", tbl)
@@ -88,28 +97,48 @@ func validateDatabaseSelectParams(raw json.RawMessage) error {
 		if len(cols) == 0 {
 			return fmt.Errorf("filter_columns[%q] must not be empty", tbl)
 		}
+		set := make(map[string]bool, len(cols))
 		for _, c := range cols {
-			filterAllowed[tbl][c] = true
+			set[c] = true
 		}
+		filterAllowed[tbl] = set
 	}
 	if p.RowFilter != nil {
 		for tbl, filt := range p.RowFilter {
 			if _, ok := allowed[tbl]; !ok {
 				return fmt.Errorf("row_filter references unlisted table %q", tbl)
 			}
-			// a filter column must be either an allowed (returnable)
-			// column or a declared filter-only column
 			permit := filterAllowed[tbl]
-			if allowed[tbl] == nil { // "*" allows everything
-				permit = nil
+			if len(permit) == 0 {
+				permit = allowed[tbl]
 			}
 			if err := checkFilterColumns(filt, permit, tbl); err != nil {
 				return err
 			}
 		}
+	} else if capability == "query:UPDATE" || capability == "query:DELETE" {
+		return fmt.Errorf("row_filter is required by %s", capability)
 	}
 	if p.Limit != nil && (p.Limit.Max < 1 || p.Limit.Max > 100000) {
 		return fmt.Errorf("limit.max must be in 1..100000")
+	}
+	if p.OrderBy != nil {
+		if capability == "query:SELECT" {
+			return fmt.Errorf("order_by is only declared by query:UPDATE and query:DELETE")
+		}
+		if len(*p.OrderBy) == 0 {
+			return fmt.Errorf("order_by must name at least one column")
+		}
+		seen := make(map[string]bool, len(*p.OrderBy))
+		for _, c := range *p.OrderBy {
+			if c == "" {
+				return fmt.Errorf("order_by entries must be non-empty column names")
+			}
+			if seen[c] {
+				return fmt.Errorf("order_by entries must be unique (repeat %q)", c)
+			}
+			seen[c] = true
+		}
 	}
 	return nil
 }

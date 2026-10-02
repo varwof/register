@@ -62,6 +62,109 @@ func TestValidateRawParams(t *testing.T) {
 	}
 }
 
+// TestIJSONIntegerBound pins the §6.2 step 3 integer bound: an integer-valued
+// numeric param whose magnitude exceeds 2^53 - 1 is refused with
+// invalid_params_number rather than rounded to binary64.  The value is read as
+// an exact rational, so the fraction and exponent spellings of an over-bound
+// integer are refused too, while a genuine fraction below the bound is not an
+// integer and still reads.  The decoded entry point refuses the same values.
+func TestIJSONIntegerBound(t *testing.T) {
+	cases := []struct {
+		name    string
+		raw     string
+		wantErr error
+	}{
+		{"at_bound", `{"n":9007199254740991}`, nil},
+		{"bound_minus_half", `{"n":9007199254740990.5}`, nil},
+		{"over_bound", `{"n":9007199254740992}`, ErrInvalidParamsNumber},
+		{"over_bound_plus_one", `{"n":9007199254740993}`, ErrInvalidParamsNumber},
+		{"over_bound_negative", `{"n":-9007199254740993}`, ErrInvalidParamsNumber},
+		{"over_bound_fraction_spelling", `{"n":9007199254740993.0}`, ErrInvalidParamsNumber},
+		{"over_bound_exponent_spelling", `{"n":9.007199254740993e15}`, ErrInvalidParamsNumber},
+		{"far_over_bound", `{"n":100000000000000000000}`, ErrInvalidParamsNumber},
+		{"fraction_below_bound", `{"n":1.5}`, nil},
+		{"negative_fraction", `{"n":-0.25}`, nil},
+		{"zero", `{"n":0}`, nil},
+		{"one", `{"n":1}`, nil},
+	}
+	for _, c := range cases {
+		err := ValidateRawParams(c.raw)
+		if c.wantErr == nil {
+			if err != nil {
+				t.Errorf("%s: got %v, want nil", c.name, err)
+			}
+			continue
+		}
+		if !Is(err, c.wantErr) {
+			t.Errorf("%s: got %v, want %v", c.name, err, c.wantErr)
+		}
+	}
+}
+
+// TestIJSONIntegerBoundDecoded pins that the decoded entry point refuses the
+// same values as the raw path, including inside an array or a nested object: a
+// caller that hands over an already-decoded params object must not be able to
+// carry an integer the raw text would have refused.
+func TestIJSONIntegerBoundDecoded(t *testing.T) {
+	cases := []struct {
+		name    string
+		params  map[string]any
+		wantErr error
+	}{
+		{"at_bound", map[string]any{"n": float64(ijsonMaxInteger)}, nil},
+		{"over_bound", map[string]any{"n": float64(ijsonMaxInteger + 2)}, ErrInvalidParamsNumber},
+		{"fraction", map[string]any{"n": 1.5}, nil},
+		{"nested_array", map[string]any{"n": []any{float64(ijsonMaxInteger + 2)}}, ErrInvalidParamsNumber},
+		{"nested_object", map[string]any{"n": map[string]any{"m": float64(ijsonMaxInteger + 2)}}, ErrInvalidParamsNumber},
+	}
+	for _, c := range cases {
+		err := ValidateOperationParams(c.params)
+		if c.wantErr == nil {
+			if err != nil {
+				t.Errorf("%s: got %v, want nil", c.name, err)
+			}
+			continue
+		}
+		if !Is(err, c.wantErr) {
+			t.Errorf("%s: got %v, want %v", c.name, err, c.wantErr)
+		}
+	}
+}
+
+// TestIJSONIntegerBoundConstraint pins that the I-JSON bound reaches the
+// constraint operand too, not just params: §8.1 states the max_rows operand is
+// not exempt from layer-7 closure, and an over-bound ceiling would otherwise be
+// rounded before the "op ≤ grant" comparison.  The reason code is the §8.1 one
+// (invalid_constraint), not the params one.
+func TestIJSONIntegerBoundConstraint(t *testing.T) {
+	cases := []struct {
+		name       string
+		constraint string
+		wantErr    error
+	}{
+		{"at_bound", "varwof/constraint-v1:max_rows:9007199254740991", nil},
+		{"zero", "varwof/constraint-v1:max_rows:0", nil},
+		{"ordinary", "varwof/constraint-v1:max_rows:1000", nil},
+		{"over_bound", "varwof/constraint-v1:max_rows:9007199254740992", ErrInvalidConstraint},
+		{"over_bound_plus_one", "varwof/constraint-v1:max_rows:9007199254740993", ErrInvalidConstraint},
+		{"far_over_bound", "varwof/constraint-v1:max_rows:100000000000000000000", ErrInvalidConstraint},
+		{"not_an_integer", "varwof/constraint-v1:max_rows:10.5", ErrInvalidConstraint},
+		{"unknown_scheme", "foo/db-v1:max_rows:9007199254740993", ErrUnknownConstraint},
+	}
+	for _, c := range cases {
+		err := ValidateConstraint(c.constraint)
+		if c.wantErr == nil {
+			if err != nil {
+				t.Errorf("%s: got %v, want nil", c.name, err)
+			}
+			continue
+		}
+		if !Is(err, c.wantErr) {
+			t.Errorf("%s: got %v, want %v", c.name, err, c.wantErr)
+		}
+	}
+}
+
 // TestValidateObjectParamsUnicode pins the decoded-path Unicode boundary: a
 // decoded params object that reaches the authorization APIs with invalid
 // UTF-8 (or a lone surrogate carried as its raw three-byte form) must produce
@@ -120,7 +223,8 @@ func TestRevisionCompatible(t *testing.T) {
 		{"CLC-1.12", true},
 		{"CLC-1.14", true},
 		{"CLC-1.15", true},
-		{"CLC-1.16", false},
+		{"CLC-1.16", true},
+		{"CLC-1.17", false},
 		{"CLC-2.0", false},
 		{"CLC-0.9", false},
 		{"x-1.0", false},
@@ -133,8 +237,8 @@ func TestRevisionCompatible(t *testing.T) {
 			t.Errorf("RevisionCompatible(%q) = %v, want %v", c.rev, got, c.want)
 		}
 	}
-	if CLCRevision != "CLC-1.15" {
-		t.Errorf("CLCRevision = %q, want CLC-1.15", CLCRevision)
+	if CLCRevision != "CLC-1.16" {
+		t.Errorf("CLCRevision = %q, want CLC-1.16", CLCRevision)
 	}
 }
 

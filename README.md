@@ -24,20 +24,23 @@ cd register
 export CAPABILITY_DIR=../capability/data
 
 # List all capabilities
-go run ./cmd/gen-authz -list $CAPABILITY_DIR/varwof/core/v1.json
+go run ./cmd/gen-authz -list $CAPABILITY_DIR/varwof/core-v1/v1.json
 
 # Generate authz.json
-go run ./cmd/gen-authz -out /tmp/authz.json $CAPABILITY_DIR/varwof/core/v1.json
+go run ./cmd/gen-authz -out /tmp/authz.json $CAPABILITY_DIR/varwof/core-v1/v1.json
 
 # Validate / search capabilities
 go run ./demo -data $CAPABILITY_DIR validate varwof/core-v1:cert:issue
 go run ./demo -data $CAPABILITY_DIR search issue
 ```
 
+Capability files are addressed as `<vendor>/<product>-v<major>/v<major>.json`, so
+the paths above carry the `-v1` product suffix.
+
 ## Installation
 
 ```bash
-go get github.com/varwof/register@v0.1.0
+go get github.com/varwof/register@v0.8.0
 ```
 
 ## Directory Structure
@@ -48,15 +51,43 @@ register/
 ├── ruleexec/         # execution layer (rules, conditions, flow, budgets, SQL)
 ├── schema.go / registry.go / validator.go / mincap.go
 ├── genauthz.go / gendocs.go / sign.go / loader.go / params_validate.go
-├── cmd/{gen-authz,gen-docs,gen-capability,gen-backfill,gen-rule,sign,verify,vectors-run}/
+├── cmd/              # tools and conformance runners (see the table below)
 ├── demo/             # capability demo (needs -data <capability data dir>)
 ├── demo/rule-exec/   # rule-exec e2e demo + rule.schema.json + TS mirror
 ├── docs/             # user docs
 └── dev-docs/         # developer docs
 ```
 
+### `cmd/` tools
+
+| Command | Purpose |
+|---|---|
+| `gen-authz` | generate `authz.json` from a capability scheme (`-list` prints the scheme) |
+| `gen-docs` | render capability documentation |
+| `gen-capability` | scaffold a new capability scheme |
+| `gen-backfill` | backfill derived fields into existing schemes |
+| `gen-rule` | sign a `ruleexec` rule against its signer grant |
+| `sign` / `verify` | PKCS#7 sign / verify a capability file |
+| `record` | create and re-verify a Decision Record (`-verify`, `-envelope`) |
+| `size-report` | byte budget of the optional artifacts (record / envelope / challenge) |
+| `vectors-run` | CLC-A authorization corpus |
+| `evidence-vectors-run` | CLC-E evidence corpus |
+| `crosswalk-vectors-run` | carrier-binding crosswalk corpus |
+| `resolve-vectors-run` | §8.5 `Resolve` corpus |
+| `param-bounds-vectors-run` | §6.5 parameter bounds corpus |
+| `param-bounds-meet-vectors-run` | §6.6 `BoundMeet` corpus |
+| `constraint-union-vectors-run` | §7.1 `ConstraintUnion` corpus |
+| `contains-vectors-run` | §13 `Contains` containment corpus |
+| `contains-crosswalk-run` | CLC-D cross-vendor containment crosswalk corpus |
+| `authorize-chain-vectors-run` | §13.11 `AuthorizeWithChain` corpus |
+| `semantics/fuzz_runner` | differential fuzz target (reads a JSONL case file) |
+
+Every runner reads its corpus from the environment and **exits non-zero on any
+mismatch**; see [Conformance corpora](#conformance-corpora).
+
 Capability definitions themselves are **not** in this repository; they live in
-the separate `capability` module (`../capability/data/<vendor>/<product>/v*.json`).
+the separate [`varwof/capability`](https://github.com/varwof/capability) module
+(`data/<vendor>/<product>-v<major>/v<major>.json`).
 
 ## Provenance and licensing
 
@@ -87,6 +118,7 @@ ACA is a *composition contract* over these two axes, not a third layer.
 | `ValidateCapabilityID` | §3 grammar (v1: literal + trailing `*` only) |
 | `Entails(grant, op)` | authorization binding (§6) |
 | `Intersect(grants...)` | effective grant set (§7) |
+| `ConstraintUnion(chain...)` | derived constraint projection of a chain (§7.1) |
 | `Authorize(grant, op)` | decision function (§9) |
 | `Combine(alg, decisions...)` | conflict resolution across sources (default `deny-overrides`) |
 | `Discharge(decision, understood)` | consumer-side obligation rule (§8.4 + XACML §2.13/§7.2.1) |
@@ -94,6 +126,27 @@ ACA is a *composition contract* over these two axes, not a third layer.
 | `Requirement` / `EvaluateRequirement` | the relying party's sufficiency bar (`CLC-REQUIREMENT-v1`) |
 | `ComputeActionID` / `Match` | instance identity and binding (§4.2/§6.4) |
 | `CanonicalJSON` | JCS canonicalization for digests |
+
+**Delegation containment (CLC-D)** — the chain face, `§13`:
+
+| Function | Purpose |
+|---|---|
+| `Contains(parent, child)` | the containment relation over `(identifier, parameters)` (§13.4–§13.5) |
+| `AuthorizeWithChain(chain, op)` | fused chain check: per-hop `Contains`, then `Authorize(Intersect(chain))` (§13.11) |
+
+**Input boundaries** — what a params object must satisfy before any layer runs.
+Callers that skip these get no §9.3 protection:
+
+| Function | Purpose |
+|---|---|
+| `ValidateRawParams(raw)` | the raw-text entry (§6.2, §9.3 layer 2): size/depth, duplicate keys, number shape, malformed Unicode |
+| `ValidateGrantParams` / `ValidateOperationParams` | the decoded-object entry (§6.2 step 6) on a `map[string]any` |
+| `ValidateParamBounds(bounds, params)` | one-representation binding rule for `param_bounds` (§6.5) |
+| `ValidateConstraint(c)` | constraint grammar and known types (§8.1) |
+
+Both parameter entry points apply the same §6.2 caps and the same
+`invalid_params_number` denial, so an integer outside the I-JSON interoperable
+range (magnitude above 2^53−1) is refused rather than rounded, at either entry.
 
 **Optional profile** — carried, not required: a deployment that only decides
 online pays none of this.  Everything here is off unless a caller turns it on:
@@ -110,18 +163,62 @@ online pays none of this.  Everything here is off unless a caller turns it on:
 Failures are fail-closed and carry stable reason codes (§9.4); when several
 conditions fail, the normative ordering (§9.3) selects the single reported code.
 
-Run the shared conformance vectors — **verdict and normative reason are both
-asserted, and the process exits non-zero on any mismatch**:
+This implementation declares the revision named by the Go constant
+`semantics.CLCRevision` — the single source of truth for it — and applies the
+compatible reading of §12.1: an input whose declared major equals ours and whose
+declared minor is ≤ ours is evaluated normally; a higher minor fails closed with
+`unsupported_language_revision`. It is never silently downgraded.
+
+### Conformance corpora
+
+Every corpus is published in [`varwof/capability`](https://github.com/varwof/capability)
+under `data/_vectors/`, and every runner **asserts verdict and normative reason
+and exits non-zero on any mismatch**. Point a runner at a corpus with the
+environment variable it reads:
 
 ```bash
-CLC_VECTORS=../capability/data/_vectors/clc-v1/vectors.json go run ./cmd/vectors-run/
+export CLC_VECTORS=../capability/data/_vectors/clc-v1/vectors.json
+go run ./cmd/vectors-run/
 ```
 
-The evidence side has its own corpus and runner (CLC-E, 32 vectors):
+| Corpus | Cases | Runner | Environment variable |
+|---|---|---|---|
+| `clc-v1/vectors.json` | 146 | `cmd/vectors-run` | `CLC_VECTORS` |
+| `clc-v1/evidence-vectors.json` | 32 | `cmd/evidence-vectors-run` | `CLC_EVIDENCE_VECTORS` |
+| `clc-v1/crosswalk-vectors.json` | 13 | `cmd/crosswalk-vectors-run` | `CLC_CROSSWALK_VECTORS` |
+| `clc-v1/param-bounds-vectors.json` | 43 | `cmd/param-bounds-vectors-run` | `CLC_PARAM_BOUNDS_VECTORS` |
+| `clc-v1/param-bounds-meet-vectors.json` | 27 | `cmd/param-bounds-meet-vectors-run` | `CLC_PARAM_BOUNDS_MEET_VECTORS` |
+| `clc-v1/constraint-union-vectors.json` | 12 | `cmd/constraint-union-vectors-run` | `CLC_CONSTRAINT_UNION_VECTORS` |
+| `clc-v1/resolve-vectors.json` | 26 | `cmd/resolve-vectors-run` | `CLC_RESOLVE_VECTORS` |
+| `clc-d/containment-vectors.json` | 64 | `cmd/contains-vectors-run` | `CLC_D_VECTORS` |
+| `clc-d/containment-crosswalk-vectors.json` | 44 | `cmd/contains-crosswalk-run` | `CLC_D_CROSSWALK_VECTORS` |
+| `clc-d/authorize-chain-vectors.json` | 15 | `cmd/authorize-chain-vectors-run` | `CLC_AUTHORIZE_CHAIN_VECTORS` |
 
-```bash
-CLC_EVIDENCE_VECTORS=../capability/data/_vectors/clc-v1/evidence-vectors.json go run ./cmd/evidence-vectors-run/
-```
+The CLC-A set also carries the §7.1 UTF-8 collation (2) and §6.5 type-sensitive
+equality (11) cases, plus the property corpora (1184 P11 cases, 500 meet-invariant
+cases, 784 containment-closure cases) — those run from `go test ./semantics/`
+rather than a standalone runner.
+
+These corpora are **portable**: the same files are consumed by the other
+same-author implementations, so a divergence is visible from both sides —
+
+| Implementation | Language | Entry |
+|---|---|---|
+| [`varwof/register`](https://github.com/varwof/register) | Go | this module, `cmd/*-run` |
+| [`varwof/aic-capability-demo`](https://github.com/varwof/aic-capability-demo) | Python | `vectors-run.py`, `property_test.py` |
+| [`varwof/aic-capability-demo/ts`](https://github.com/varwof/aic-capability-demo/tree/main/ts) | TypeScript | `ts/*-run.ts` (Node, zero dependencies) |
+
+CI (`.github/workflows/clc-conformance.yml`) clones `varwof/capability` and runs
+`gofmt` / `go vet` / `go test` plus every runner on each push and PR.
+
+### Input boundaries
+
+Both parameter entry points apply the same §6.2 caps and the same
+`invalid_params_number` denial, so an integer outside the I-JSON interoperable
+range (magnitude above 2^53 − 1) is refused rather than rounded, at either entry.
+The bound reaches the `max_rows` **constraint operand** as well — §8.1 does not
+exempt it from layer-7 closure — and an over-bound ceiling is refused with
+`invalid_constraint`, the §8.1 reason code.
 
 Byte budget of the optional artifacts is reproducible (record / envelope /
 challenge sizes, and the constraint strings that drive certificate size):
@@ -129,9 +226,6 @@ challenge sizes, and the constraint strings that drive certificate size):
 ```bash
 go run ./cmd/size-report/
 ```
-
-CI (`.github/workflows/clc-conformance.yml`) clones `varwof/capability` and runs
-`gofmt` / `go vet` / `go test` / the vectors on every push and pull request.
 
 ### Decision Records (`semantics/record.go`)
 
@@ -190,6 +284,13 @@ graph TB
 ```
 
 register is the **capability specification layer** of the varwof ecosystem, connecting capability (data) with core/gateway (runtime validation). This project is a member of the [Open Invention Network](https://openinventionnetwork.com/).
+
+### Related repositories
+
+| Repository | What it is |
+|---|---|
+| [`varwof/capability`](https://github.com/varwof/capability) | the capability data, the CLC-v1 specification text and every conformance corpus this module reads ([中文](https://github.com/varwof/capability/blob/main/README_CN.md)) |
+| [`varwof/aic-capability-demo`](https://github.com/varwof/aic-capability-demo) | the Python and TypeScript ports that consume the same corpora ([中文](https://github.com/varwof/aic-capability-demo/blob/main/README_CN.md)) |
 
 ## Links
 

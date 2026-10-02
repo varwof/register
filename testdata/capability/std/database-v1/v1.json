@@ -255,17 +255,122 @@
               ]
             }
           },
+          "filter_columns": {
+            "type": "object",
+            "description": "Columns usable only in WHERE, not returned (e.g. tenant_id)",
+            "additionalProperties": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "uniqueItems": true
+            }
+          },
           "row_filter": {
             "type": "object",
             "additionalProperties": {
               "$ref": "#/$defs/filter"
             }
+          },
+          "limit": {
+            "type": "object",
+            "description": "Row cap on the statement; on UPDATE/DELETE it is refused without a grant-side order_by",
+            "properties": {
+              "max": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 100000
+              }
+            },
+            "required": [
+              "max"
+            ]
+          },
+          "order_by": {
+            "type": "array",
+            "description": "Deterministic order for a capped write; grant-side only, the caller never supplies it",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "uniqueItems": true
           }
         },
         "$defs": {
           "filter": {
-            "type": "object",
-            "description": "Same Filter grammar as query:SELECT"
+            "oneOf": [
+              {
+                "type": "object",
+                "required": [
+                  "column",
+                  "op",
+                  "value"
+                ],
+                "properties": {
+                  "column": {
+                    "type": "string"
+                  },
+                  "op": {
+                    "enum": [
+                      "=",
+                      "!=",
+                      "<",
+                      "<=",
+                      ">",
+                      ">=",
+                      "in",
+                      "not in",
+                      "between",
+                      "like",
+                      "is null",
+                      "is not null"
+                    ]
+                  },
+                  "value": {}
+                }
+              },
+              {
+                "type": "object",
+                "required": [
+                  "and"
+                ],
+                "properties": {
+                  "and": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                      "$ref": "#/$defs/filter"
+                    }
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "required": [
+                  "or"
+                ],
+                "properties": {
+                  "or": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                      "$ref": "#/$defs/filter"
+                    }
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "required": [
+                  "not"
+                ],
+                "properties": {
+                  "not": {
+                    "$ref": "#/$defs/filter"
+                  }
+                }
+              }
+            ]
           }
         }
       }
@@ -300,12 +405,117 @@
             "additionalProperties": {
               "$ref": "#/$defs/filter"
             }
+          },
+          "filter_columns": {
+            "type": "object",
+            "description": "Columns usable only in WHERE, not returned (e.g. tenant_id)",
+            "additionalProperties": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "uniqueItems": true
+            }
+          },
+          "limit": {
+            "type": "object",
+            "description": "Row cap on the statement; on UPDATE/DELETE it is refused without a grant-side order_by",
+            "properties": {
+              "max": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 100000
+              }
+            },
+            "required": [
+              "max"
+            ]
+          },
+          "order_by": {
+            "type": "array",
+            "description": "Deterministic order for a capped write; grant-side only, the caller never supplies it",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "uniqueItems": true
           }
         },
         "$defs": {
           "filter": {
-            "type": "object",
-            "description": "Same Filter grammar as query:SELECT"
+            "oneOf": [
+              {
+                "type": "object",
+                "required": [
+                  "column",
+                  "op",
+                  "value"
+                ],
+                "properties": {
+                  "column": {
+                    "type": "string"
+                  },
+                  "op": {
+                    "enum": [
+                      "=",
+                      "!=",
+                      "<",
+                      "<=",
+                      ">",
+                      ">=",
+                      "in",
+                      "not in",
+                      "between",
+                      "like",
+                      "is null",
+                      "is not null"
+                    ]
+                  },
+                  "value": {}
+                }
+              },
+              {
+                "type": "object",
+                "required": [
+                  "and"
+                ],
+                "properties": {
+                  "and": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                      "$ref": "#/$defs/filter"
+                    }
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "required": [
+                  "or"
+                ],
+                "properties": {
+                  "or": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                      "$ref": "#/$defs/filter"
+                    }
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "required": [
+                  "not"
+                ],
+                "properties": {
+                  "not": {
+                    "$ref": "#/$defs/filter"
+                  }
+                }
+              }
+            ]
           }
         }
       }
