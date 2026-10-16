@@ -40,7 +40,7 @@ go run ./demo -data $CAPABILITY_DIR search issue
 ## 安装
 
 ```bash
-go get github.com/varwof/register@v0.8.0
+go get github.com/varwof/register@v0.9.0
 ```
 
 ## 目录结构

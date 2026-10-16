@@ -40,7 +40,7 @@ the paths above carry the `-v1` product suffix.
 ## Installation
 
 ```bash
-go get github.com/varwof/register@v0.8.0
+go get github.com/varwof/register@v0.9.0
 ```
 
 ## Directory Structure
