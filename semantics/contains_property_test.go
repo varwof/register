@@ -18,6 +18,13 @@ import (
 //	  * Contains(P, C) MUST NOT raise, and
 //	  * Contains(P, C) true AND Entails(C, o) true ==> Entails(P, o) true.
 //
+// The same case list also carries the explicit antisymmetry assertion
+// (CL 13.10.8): Contains is antisymmetric on semantic equivalence classes —
+// for every case, Contains(P, C) and Contains(C, P) both true is allowed only
+// when P and C fall in the same semantic class (same identifier and
+// semantically-equal params, with `params:{}` ≡ absent), never across two
+// distinct classes (capability-language-core-v1 §13.3).
+//
 // The case list lives in the capability repository
 // (data/_vectors/clc-d/containment-property-cases.json); override with
 // CLC_D_PROPERTY_CASES.
@@ -52,10 +59,23 @@ func TestContainsProperty(t *testing.T) {
 
 	containedPairs := 0
 	opChecks := 0
+	antisymViolations := 0
+	antisymMutual := 0
 	for _, c := range file.Cases {
 		res := Contains(c.Parent, c.Child)
 		if res.Contains {
 			containedPairs++
+		}
+		// Antisymmetry (§13.3): mutual containment must imply semantic
+		// equivalence, so a distinct pair reporting both directions is a
+		// contradiction (CL 13.10.8).
+		if res.Contains && Contains(c.Child, c.Parent).Contains {
+			antisymMutual++
+			if semanticClass(c.Parent) != semanticClass(c.Child) {
+				antisymViolations++
+				t.Errorf("%s: Contains(P,C) and Contains(C,P) both true across distinct semantic classes "+
+					"(parent=%+v child=%+v)", c.ID, c.Parent, c.Child)
+			}
 		}
 		for _, op := range file.Ops {
 			opChecks++
@@ -68,6 +88,28 @@ func TestContainsProperty(t *testing.T) {
 			}
 		}
 	}
-	t.Logf("property: %d cases, %d contained pairs, %d op-checks",
-		len(file.Cases), containedPairs, opChecks)
+	t.Logf("property: %d cases, %d contained pairs, %d op-checks, "+
+		"%d mutual-containment pairs, %d antisymmetry violations",
+		len(file.Cases), containedPairs, opChecks, antisymMutual, antisymViolations)
+}
+
+// semanticClass returns a canonical fingerprint of a grant's semantic
+// equivalence class: the identifier plus the canonical (RFC 8785) params,
+// with an empty or absent params object collapsed to the same class (the
+// §6.5/§13.3 rule that `params:{}` ≡ absent).  Two grants in the same class
+// are indistinguable to Contains, so mutual containment between them is not an
+// antisymmetry violation; mutual containment across two different classes is.
+func semanticClass(g Grant) string {
+	v := struct {
+		ID     string         `json:"id"`
+		Params map[string]any `json:"params,omitempty"`
+	}{ID: g.ID}
+	if len(g.Params) > 0 {
+		v.Params = g.Params
+	}
+	b, err := CanonicalJSON(v)
+	if err != nil {
+		return g.ID
+	}
+	return string(b)
 }

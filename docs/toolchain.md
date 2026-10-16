@@ -84,7 +84,7 @@ go run ./demo/rule-exec -publish rules/ -out published/
 | `rule-exec -publish` | ✅ 签 | ✅ | ✗ | ✗ |
 | `LoadRulePlugin`（加载） | ✅ 验 | ✅ | ✗ | ✅ |
 | `gen-backfill`（数据） | — | — | digest 漂移校验 | — |
-| `vectors-run` / 属性测试 | — | — | CLC 语义一致性（98 向量 + 1184 属性用例） | — |
+| `vectors-run` / 属性测试 | — | — | CLC 语义一致性（154 向量 + 1184 属性用例） | — |
 
 **已知缺口**：参数契约目前只在生成路径（`gen-capability` / `gen-rule`）生效。手写的规则可以绕过它被签名并加载。
 补齐方向：把注册表（或一个校验钩子）传进发布与加载路径。
@@ -116,5 +116,5 @@ go test ./ruleexec/ ./cmd/gen-rule/ -v        # 规则校验、发布边界、�
 go run ./demo/rule-exec                        # 规则 → 签名 → 校验 → 条件 → 流程
 ```
 
-当前状态：CLC 向量 105/105（Go、Python、TypeScript，含 CLC-1.3 的 `allow_unresolved` 独立 verdict 与 §9.3 多 grant 聚合）、P11 属性 1184 例 0 失败、属性用例可复现（重生成字节一致）、
+当前状态：CLC 向量 154/154（Go、Python、TypeScript，截至 rev CLC-1.17，含 `allow_unresolved` 独立 verdict 与 §9.1 多 grant 聚合、§13 委派包含、§6.5 扩展参数界、§8.5 Resolve、§7.1 ConstraintUnion 与 §13.11 AuthorizeWithChain）、P11 属性 1184 例 0 失败、属性用例可复现（重生成字节一致）、
 OCMP 离线向量 12 例覆盖 11/11 规范码、规则层测试全绿、TS 镜像 3/3、SQL parity 4/4。

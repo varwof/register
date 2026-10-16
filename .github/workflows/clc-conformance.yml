@@ -62,6 +62,22 @@ jobs:
           CLC_D_CROSSWALK_VECTORS: ${{ github.workspace }}/../capability/data/_vectors/clc-d/containment-crosswalk-vectors.json
         run: go run ./cmd/contains-crosswalk-run/
 
+      - name: CLC-D reason-code collapse policy (§13.5)
+        # Cross-check: a non-collapsible code must still be observable from the
+        # corpus of its own production layer (containment + cross-walk +
+        # profile-owned mode-lattice).
+        env:
+          CLC_D_REASON_COLLAPSE_VECTORS: ${{ github.workspace }}/../capability/data/_vectors/clc-d/reason-collapse-vectors.json
+          CLC_D_VECTORS: ${{ github.workspace }}/../capability/data/_vectors/clc-d/containment-vectors.json
+          CLC_D_CROSSWALK_VECTORS: ${{ github.workspace }}/../capability/data/_vectors/clc-d/containment-crosswalk-vectors.json
+          CLC_D_MODE_VECTORS: ${{ github.workspace }}/../capability/data/_vectors/clc-d/profile-owned/aic-jwt-da-mode-lattice-vectors.json
+        run: go run ./cmd/reason-collapse-vectors-run/
+
+      - name: CLC-D AIC-JWT DA delegation-mode pre-check (§13.4.5, profile-owned)
+        env:
+          CLC_D_MODE_VECTORS: ${{ github.workspace }}/../capability/data/_vectors/clc-d/profile-owned/aic-jwt-da-mode-lattice-vectors.json
+        run: go run ./cmd/mode-lattice-vectors-run/
+
       - name: CLC-1.10 extended parameter bounds (verdict + reason)
         env:
           CLC_PARAM_BOUNDS_VECTORS: ${{ github.workspace }}/../capability/data/_vectors/clc-v1/param-bounds-vectors.json

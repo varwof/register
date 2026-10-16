@@ -90,7 +90,7 @@ go run ./demo/rule-exec -publish rules/ -out published/
 | `rule-exec -publish` | ✅ sign | ✅ | ✗ | ✗ |
 | `LoadRulePlugin` (load) | ✅ verify | ✅ | ✗ | ✅ |
 | `gen-backfill` (data) | — | — | digest drift check | — |
-| `vectors-run` / property tests | — | — | CLC semantic conformance (120 vectors + 1184 property cases) | — |
+| `vectors-run` / property tests | — | — | CLC semantic conformance (154 vectors + 1184 property cases) | — |
 
 **Known gap:** the parameter contract only runs on the generation path
 (`gen-capability` / `gen-rule`).  A hand-written rule can bypass it, be signed and be
@@ -125,13 +125,13 @@ go test ./ruleexec/ ./cmd/gen-rule/ -v        # rule validation, publication bou
 go run ./demo/rule-exec                        # rule → signature → validation → conditions → flow
 ```
 
-Current state: CLC corpus 120/120 in Go, Python and TypeScript (covering the
-language through rev CLC-1.13, including the `allow_unresolved` verdict,
+Current state: CLC corpus 154/154 in Go, Python and TypeScript (covering the
+language through rev CLC-1.17, including the `allow_unresolved` verdict,
 §9.1 multi-grant aggregation, the §13 delegation-containment relation, the
 §6.5 extended parameter bounds, the §8.5 `Resolve` consumer loop, the §7.1
 `ConstraintUnion` projection and the §13.11 `AuthorizeWithChain` check); CLC-D
-containment 64/64 vectors, 44/44 crosswalk vectors, 14/14 chain vectors and 784
-property cases with 0 violations in all three; CLC-1.10 param bounds 43/43,
+containment 64/64 vectors, 44/44 crosswalk vectors, 15/15 chain vectors and 784
+property cases with 0 violations in all three; CLC-1.10 param bounds 49/49,
 CLC-1.11 Resolve 26/26 and CLC-1.12 ConstraintUnion 12/12 in all three; P11
 property 1184 cases with
 0 failures in all three; property cases reproducible (byte-identical regeneration); OCMP

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/varwof/register/semantics"
 )
@@ -24,7 +25,13 @@ type ContainVector struct {
 	Profile      string          `json:"profile"`
 	ParentSource json.RawMessage `json:"parent_source"`
 	ChildSource  json.RawMessage `json:"child_source"`
-	Expect       struct {
+	// OutOfScope names the carrier dimensions this profile declares out of
+	// scope (core §13.8.1 obligation 3): fields the mapped grant cannot carry.
+	// The relation must never see them — a profile that maps a declared
+	// out-of-scope dimension into a grant is a defect, not a containment
+	// result.
+	OutOfScope []string `json:"out_of_scope,omitempty"`
+	Expect     struct {
 		Contains bool   `json:"contains"`
 		Reason   string `json:"reason,omitempty"`
 	} `json:"expect"`
@@ -87,6 +94,15 @@ func runContainVector(v ContainVector) Result {
 		r.Got, r.Note = "map error", "child: "+err.Error()
 		return r
 	}
+	// Obligation 3 (core §13.8.1): a dimension the profile declares out of
+	// scope must never arrive inside a mapped grant.  If the profile mapped it
+	// into a parameter (or dropped it silently), the relation would be asked to
+	// compare something it cannot see — this is the fail-closed rule, and a
+	// violation here is a profile defect, not a containment verdict.
+	if leak := declaredOutOfScopeLeak(v.OutOfScope, parent, child); len(leak) > 0 {
+		r.Got, r.Note = "map error", "out_of_scope dimension leaked into mapped grant: "+strings.Join(leak, ", ")
+		return r
+	}
 
 	res := semantics.Contains(parent, child)
 	if res.Contains {
@@ -103,6 +119,23 @@ func runContainVector(v ContainVector) Result {
 		r.Pass = canonicalReason(res.Reason) == canonicalReason(v.Expect.Reason)
 	}
 	return r
+}
+
+// declaredOutOfScopeLeak reports declared out-of-scope dimensions that still
+// appear inside a mapped grant's parameters or identifier.  A dimension cannot
+// be both "not in the mapped grant" and "compared" — if it is present, the
+// profile silently dropped or smuggled it, which obligation 3 forbids.
+func declaredOutOfScopeLeak(declared []string, grants ...semantics.Grant) []string {
+	var leak []string
+	for _, name := range declared {
+		for _, g := range grants {
+			if _, ok := g.Params[name]; ok {
+				leak = append(leak, name)
+				break
+			}
+		}
+	}
+	return leak
 }
 
 // mapSingleGrant applies a cross-walk profile and requires the native

@@ -173,10 +173,10 @@ go run ./cmd/vectors-run/
 
 | 语料 | 用例数 | Runner | 环境变量 |
 |---|---|---|---|
-| `clc-v1/vectors.json` | 146 | `cmd/vectors-run` | `CLC_VECTORS` |
+| `clc-v1/vectors.json` | 154 | `cmd/vectors-run` | `CLC_VECTORS` |
 | `clc-v1/evidence-vectors.json` | 32 | `cmd/evidence-vectors-run` | `CLC_EVIDENCE_VECTORS` |
 | `clc-v1/crosswalk-vectors.json` | 13 | `cmd/crosswalk-vectors-run` | `CLC_CROSSWALK_VECTORS` |
-| `clc-v1/param-bounds-vectors.json` | 43 | `cmd/param-bounds-vectors-run` | `CLC_PARAM_BOUNDS_VECTORS` |
+| `clc-v1/param-bounds-vectors.json` | 49 | `cmd/param-bounds-vectors-run` | `CLC_PARAM_BOUNDS_VECTORS` |
 | `clc-v1/param-bounds-meet-vectors.json` | 27 | `cmd/param-bounds-meet-vectors-run` | `CLC_PARAM_BOUNDS_MEET_VECTORS` |
 | `clc-v1/constraint-union-vectors.json` | 12 | `cmd/constraint-union-vectors-run` | `CLC_CONSTRAINT_UNION_VECTORS` |
 | `clc-v1/resolve-vectors.json` | 26 | `cmd/resolve-vectors-run` | `CLC_RESOLVE_VECTORS` |

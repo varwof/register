@@ -78,7 +78,9 @@ register/
 | `param-bounds-meet-vectors-run` | §6.6 `BoundMeet` corpus |
 | `constraint-union-vectors-run` | §7.1 `ConstraintUnion` corpus |
 | `contains-vectors-run` | §13 `Contains` containment corpus |
-| `contains-crosswalk-run` | CLC-D cross-vendor containment crosswalk corpus |
+| `contains-crosswalk-run` | CLC-D cross-vendor containment crosswalk corpus (incl. §13.8.1 obligation-3 `out_of_scope` check) |
+| `mode-lattice-vectors-run` | §13.4.5 AIC-JWT DA delegation-mode pre-check corpus (profile-owned) |
+| `reason-collapse-vectors-run` | §13.5 reason-code collapse policy corpus + production-layer cross-check |
 | `authorize-chain-vectors-run` | §13.11 `AuthorizeWithChain` corpus |
 | `semantics/fuzz_runner` | differential fuzz target (reads a JSONL case file) |
 
@@ -183,15 +185,17 @@ go run ./cmd/vectors-run/
 
 | Corpus | Cases | Runner | Environment variable |
 |---|---|---|---|
-| `clc-v1/vectors.json` | 146 | `cmd/vectors-run` | `CLC_VECTORS` |
+| `clc-v1/vectors.json` | 154 | `cmd/vectors-run` | `CLC_VECTORS` |
 | `clc-v1/evidence-vectors.json` | 32 | `cmd/evidence-vectors-run` | `CLC_EVIDENCE_VECTORS` |
 | `clc-v1/crosswalk-vectors.json` | 13 | `cmd/crosswalk-vectors-run` | `CLC_CROSSWALK_VECTORS` |
-| `clc-v1/param-bounds-vectors.json` | 43 | `cmd/param-bounds-vectors-run` | `CLC_PARAM_BOUNDS_VECTORS` |
+| `clc-v1/param-bounds-vectors.json` | 49 | `cmd/param-bounds-vectors-run` | `CLC_PARAM_BOUNDS_VECTORS` |
 | `clc-v1/param-bounds-meet-vectors.json` | 27 | `cmd/param-bounds-meet-vectors-run` | `CLC_PARAM_BOUNDS_MEET_VECTORS` |
 | `clc-v1/constraint-union-vectors.json` | 12 | `cmd/constraint-union-vectors-run` | `CLC_CONSTRAINT_UNION_VECTORS` |
 | `clc-v1/resolve-vectors.json` | 26 | `cmd/resolve-vectors-run` | `CLC_RESOLVE_VECTORS` |
 | `clc-d/containment-vectors.json` | 64 | `cmd/contains-vectors-run` | `CLC_D_VECTORS` |
 | `clc-d/containment-crosswalk-vectors.json` | 44 | `cmd/contains-crosswalk-run` | `CLC_D_CROSSWALK_VECTORS` |
+| `clc-d/reason-collapse-vectors.json` | 3 | `cmd/reason-collapse-vectors-run` | `CLC_D_REASON_COLLAPSE_VECTORS` |
+| `clc-d/profile-owned/aic-jwt-da-mode-lattice-vectors.json` | 5 | `cmd/mode-lattice-vectors-run` | `CLC_D_MODE_VECTORS` |
 | `clc-d/authorize-chain-vectors.json` | 15 | `cmd/authorize-chain-vectors-run` | `CLC_AUTHORIZE_CHAIN_VECTORS` |
 
 The CLC-A set also carries the §7.1 UTF-8 collation (2) and §6.5 type-sensitive

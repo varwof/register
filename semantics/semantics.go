@@ -293,7 +293,16 @@ func paramsDepth(v any, depth int) int {
 // of reducing to the filtered enum; Contains returns the §13.3
 // ContainmentResult{Contains, Reason} shape.  Inputs without param_bounds are
 // unaffected; CLC-1.14 and earlier inputs still read.)
-const CLCRevision = "CLC-1.16"
+// (rev CLC-1.16 · 2026-09-28: corrective — the I-JSON integer bound (§6.2
+// step 3), leading-BOM refusal (step 8) and host numeric-carrier normalization
+// (step 9).  CLC-1.15 and earlier inputs still read.)
+// (rev CLC-1.17 · 2026-10-13: corrective, no verdict change — §6.2 step 3 is
+// restated so the I-JSON integer bound is judged on the mathematical value of
+// the received token (an exactly-representable value such as 1e100 is refused),
+// number identity is the JSON number not its spelling (-0 ≡ 0, 1e3 ≡ 1000), and
+// a non-integer token is pinned to its IEEE-754 binary64 value.  The behavior
+// is what CLC-1.16 already implemented; CLC-1.16 and earlier inputs still read.)
+const CLCRevision = "CLC-1.17"
 
 const (
 	// maxParamsSerializedBytes bounds the JCS-serialized params size
@@ -523,7 +532,7 @@ func walkParamsValue(dec *json.Decoder, buf *bytes.Buffer, depth int, dupErr, nu
 var numericLiteralRE = regexp.MustCompile(`^-?(0|[1-9][0-9]*)(\.[0-9]+)?([eE][+-]?[0-9]+)?$`)
 
 // ijsonMaxInteger is the largest integer magnitude binary64 represents exactly
-// (2^53 - 1).  I-JSON [RFC7493] §6 names this range as interoperable.
+// (2^53 - 1).  I-JSON [RFC7493] §2.2 names this range as interoperable.
 const ijsonMaxInteger = 1<<53 - 1
 
 // exceedsIJSONIntegerBound reports whether lit is an integer-valued JSON number
