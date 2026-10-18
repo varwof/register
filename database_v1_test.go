@@ -49,3 +49,39 @@ func TestDatabaseV1Registered(t *testing.T) {
 		t.Fatalf("unregistered capability must fail")
 	}
 }
+
+// R-5: negative cases for a structured scheme, through the same validation
+// entry point an operation uses.
+func TestDatabaseV1NegativeParams(t *testing.T) {
+	reg, err := LoadFromDir(filepath.Join("testdata", "capability"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, ok := reg["std/database-v1"]
+	if !ok {
+		t.Fatal("std/database-v1 not found")
+	}
+	var selectCap *CapabilityEntry
+	for i := range r.Capabilities {
+		if r.Capabilities[i].ID == "query:SELECT" {
+			selectCap = &r.Capabilities[i]
+			break
+		}
+	}
+	if selectCap == nil {
+		t.Fatal("query:SELECT not found")
+	}
+	cases := []struct {
+		name   string
+		params map[string]any
+	}{
+		{"tables not an array", map[string]any{"tables": "orders"}},
+		{"unknown parameter", map[string]any{"tables": []any{"orders"}, "nope": 1.0}},
+		{"limit wrong type", map[string]any{"tables": []any{"orders"}, "limit": "10"}},
+	}
+	for _, c := range cases {
+		if err := validateParamsSchema(selectCap.ParamsSchema, c.params); err == nil {
+			t.Errorf("%s: want a refusal", c.name)
+		}
+	}
+}

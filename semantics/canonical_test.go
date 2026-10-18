@@ -191,6 +191,64 @@ func TestCanonicalJSONNoWhitespace(t *testing.T) {
 	}
 }
 
+// R-3 property: a value's canonical form depends on the value, not on how the
+// Go map was built, and canonicalizing twice changes nothing.
+func TestCanonicalJSONOrderAndIdempotence(t *testing.T) {
+	a := map[string]any{}
+	a["z"] = 1
+	a["a"] = map[string]any{"k2": []any{"x", "y"}, "k1": true}
+
+	b := map[string]any{}
+	b["a"] = map[string]any{"k1": true, "k2": []any{"x", "y"}}
+	b["z"] = 1
+
+	ca, err := CanonicalJSON(a)
+	if err != nil {
+		t.Fatalf("canonical a: %v", err)
+	}
+	cb, err := CanonicalJSON(b)
+	if err != nil {
+		t.Fatalf("canonical b: %v", err)
+	}
+	if string(ca) != string(cb) {
+		t.Fatalf("insertion order changed the canonical form:\n%s\n%s", ca, cb)
+	}
+	var tree any
+	if err := json.Unmarshal(ca, &tree); err != nil {
+		t.Fatalf("canonical a is not JSON: %v", err)
+	}
+	cc, err := CanonicalJSON(tree)
+	if err != nil {
+		t.Fatalf("canonical a again: %v", err)
+	}
+	if string(ca) != string(cc) {
+		t.Fatalf("canonicalization is not idempotent:\n%s\n%s", ca, cc)
+	}
+}
+
+// R-7: two texts that denote the same value but are written differently (key
+// order, "1" vs "1.0") produce the same signing input.
+func TestSigningInputStableAcrossRepresentation(t *testing.T) {
+	var a, b map[string]any
+	if err := json.Unmarshal([]byte(`{"b":2,"a":1}`), &a); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal([]byte(`{"a":1.0,"b":2}`), &b); err != nil {
+		t.Fatal(err)
+	}
+	ca, err := CanonicalJSON(a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cb, err := CanonicalJSON(b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(ca) != string(cb) {
+		t.Fatalf("equivalent texts produced different signing inputs:\n%s\n%s", ca, cb)
+	}
+}
+
 func hex32(sum [32]byte) string {
 	const hexdigits = "0123456789abcdef"
 	out := make([]byte, 64)

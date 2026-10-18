@@ -3,7 +3,10 @@
 
 package register
 
-import "testing"
+import (
+	"errors"
+	"testing"
+)
 
 // TestFlatParamValueValidation verifies flat parameter values are validated
 // against ParameterDef type/min/max/enum (P0-1), not just key presence.
@@ -81,5 +84,57 @@ func TestSchemeVersionMismatch(t *testing.T) {
 	})
 	if len(res) != 1 || !res[0].Valid {
 		t.Fatalf("matching version must pass: %+v", res)
+	}
+}
+
+// R-8: a refusal carries the offending path and a stable code, while the
+// human message stays what it was.
+func TestFlatParamStructuredError(t *testing.T) {
+	err := validateFlatParamValue(ParameterDef{Type: "int"}, "max_validity_days", "seven")
+	if err == nil {
+		t.Fatal("want a refusal")
+	}
+	var fe *FieldError
+	if !errors.As(err, &fe) {
+		t.Fatalf("error is not a *FieldError: %T", err)
+	}
+	if fe.Path != "max_validity_days" || fe.Code != "invalid_params_binding" {
+		t.Fatalf("structured fields: got %q/%q", fe.Path, fe.Code)
+	}
+	if got, want := fe.Error(), `parameter "max_validity_days": must be an integer, got string`; got != want {
+		t.Fatalf("message changed:\n got %s\nwant %s", got, want)
+	}
+}
+
+// R-2 negative matrix: every refusal path of a flat parameter carries a stable
+// code.
+func TestFlatParamNegativeMatrix(t *testing.T) {
+	cases := []struct {
+		name string
+		def  ParameterDef
+		val  any
+		code string
+	}{
+		{"int from string", ParameterDef{Type: "int"}, "7", "invalid_params_binding"},
+		{"int below min", ParameterDef{Type: "int", Min: 3.0}, 2.0, "params_out_of_range"},
+		{"int above max", ParameterDef{Type: "int", Max: 3.0}, 4.0, "params_out_of_range"},
+		{"bool from int", ParameterDef{Type: "bool"}, 1.0, "invalid_params_binding"},
+		{"string from int", ParameterDef{Type: "string"}, 1.0, "invalid_params_binding"},
+		{"string not in enum", ParameterDef{Type: "string", Enum: []string{"a", "b"}}, "c", "not_in_enum"},
+		{"list not array", ParameterDef{Type: "list"}, "a", "invalid_params_binding"},
+		{"list element not string", ParameterDef{Type: "list"}, []any{1.0}, "invalid_params_binding"},
+		{"list element not in enum", ParameterDef{Type: "list", Enum: []string{"a"}}, []any{"b"}, "not_in_enum"},
+		{"unsupported type", ParameterDef{Type: "uuid"}, "x", "invalid_params_binding"},
+	}
+	for _, c := range cases {
+		err := validateFlatParamValue(c.def, "p", c.val)
+		var fe *FieldError
+		if !errors.As(err, &fe) {
+			t.Errorf("%s: got %v, want *FieldError", c.name, err)
+			continue
+		}
+		if fe.Code != c.code || fe.Path != "p" {
+			t.Errorf("%s: got %q/%q, want %q/p", c.name, fe.Path, fe.Code, c.code)
+		}
 	}
 }

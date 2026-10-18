@@ -8,6 +8,20 @@ import (
 	"fmt"
 )
 
+// FieldError is a structured parameter refusal: the offending path and a
+// stable code, with the human message kept for compatibility (audit R-8).
+type FieldError struct {
+	Path string
+	Code string
+	msg  string
+}
+
+func (e *FieldError) Error() string { return e.msg }
+
+func paramError(key, code, format string, args ...any) error {
+	return &FieldError{Path: key, Code: code, msg: fmt.Sprintf(format, args...)}
+}
+
 // validateFlatParamValue validates a single claimed parameter value against
 // its flat ParameterDef (type/min/max/enum/required). Previously the flat
 // path only checked that the key existed, so values like
@@ -18,45 +32,45 @@ func validateFlatParamValue(pd ParameterDef, key string, value any) error {
 	case "int":
 		n, ok := asJSONNumber(value)
 		if !ok {
-			return fmt.Errorf("parameter %q: must be an integer, got %T", key, value)
+			return paramError(key, "invalid_params_binding", "parameter %q: must be an integer, got %T", key, value)
 		}
 		if mn, ok := asFloat(pd.Min); ok && n < mn {
-			return fmt.Errorf("parameter %q: %v is below minimum %v", key, n, mn)
+			return paramError(key, "params_out_of_range", "parameter %q: %v is below minimum %v", key, n, mn)
 		}
 		if mx, ok := asFloat(pd.Max); ok && n > mx {
-			return fmt.Errorf("parameter %q: %v exceeds maximum %v", key, n, mx)
+			return paramError(key, "params_out_of_range", "parameter %q: %v exceeds maximum %v", key, n, mx)
 		}
 	case "bool":
 		if _, ok := value.(bool); !ok {
-			return fmt.Errorf("parameter %q: must be a boolean, got %T", key, value)
+			return paramError(key, "invalid_params_binding", "parameter %q: must be a boolean, got %T", key, value)
 		}
 	case "string":
 		s, ok := value.(string)
 		if !ok {
-			return fmt.Errorf("parameter %q: must be a string, got %T", key, value)
+			return paramError(key, "invalid_params_binding", "parameter %q: must be a string, got %T", key, value)
 		}
 		if len(pd.Enum) > 0 && !containsString(pd.Enum, s) {
-			return fmt.Errorf("parameter %q: %q not in allowed values %v", key, s, pd.Enum)
+			return paramError(key, "not_in_enum", "parameter %q: %q not in allowed values %v", key, s, pd.Enum)
 		}
 	case "list":
 		arr, ok := value.([]any)
 		if !ok {
-			return fmt.Errorf("parameter %q: must be a list, got %T", key, value)
+			return paramError(key, "invalid_params_binding", "parameter %q: must be a list, got %T", key, value)
 		}
 		for _, e := range arr {
 			s, ok := e.(string)
 			if !ok {
-				return fmt.Errorf("parameter %q: list element must be a string, got %T", key, e)
+				return paramError(key, "invalid_params_binding", "parameter %q: list element must be a string, got %T", key, e)
 			}
 			if len(pd.Enum) > 0 && !containsString(pd.Enum, s) {
-				return fmt.Errorf("parameter %q: %q not in allowed values %v", key, s, pd.Enum)
+				return paramError(key, "not_in_enum", "parameter %q: %q not in allowed values %v", key, s, pd.Enum)
 			}
 		}
 	case "":
 		// No declared type: anything goes (legacy compatibility).
 		return nil
 	default:
-		return fmt.Errorf("parameter %q: unsupported ParameterDef type %q", key, pd.Type)
+		return paramError(key, "invalid_params_binding", "parameter %q: unsupported ParameterDef type %q", key, pd.Type)
 	}
 	return nil
 }

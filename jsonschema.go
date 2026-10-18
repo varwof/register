@@ -11,6 +11,49 @@ import (
 	"strings"
 )
 
+// SchemaError carries a stable code for a JSON-schema refusal while keeping the
+// human message unchanged (audit R-8, second path).
+type SchemaError struct {
+	Code string
+	Path string
+	msg  string
+}
+
+func (e *SchemaError) Error() string { return e.msg }
+
+func schemaErrorCode(err error) string {
+	m := err.Error()
+	switch {
+	case strings.HasPrefix(m, "must be one of"):
+		return "not_in_enum"
+	case strings.HasPrefix(m, "must be >="), strings.HasPrefix(m, "must be <="):
+		return "params_out_of_range"
+	default:
+		return "invalid_params_binding"
+	}
+}
+
+// schemaErrorPath extracts the property path from the validator's nested
+// `property "x": property "y": ...` message, when present.
+func schemaErrorPath(err error) string {
+	m := err.Error()
+	var parts []string
+	for {
+		i := strings.Index(m, `property "`)
+		if i < 0 {
+			break
+		}
+		rest := m[i+len(`property "`):]
+		j := strings.Index(rest, `"`)
+		if j < 0 {
+			break
+		}
+		parts = append(parts, rest[:j])
+		m = rest[j:]
+	}
+	return strings.Join(parts, ".")
+}
+
 // validateParamsSchema validates a claim's parameters against a capability's
 // params_schema (JSON Schema subset). Supported keywords:
 //
@@ -28,7 +71,7 @@ func validateParamsSchema(raw json.RawMessage, params map[string]any) error {
 	defs := schemaDefs(schema)
 	v := &schemaValidator{defs: defs}
 	if err := v.validate(schema, params); err != nil {
-		return err
+		return &SchemaError{Code: schemaErrorCode(err), Path: schemaErrorPath(err), msg: err.Error()}
 	}
 	return nil
 }

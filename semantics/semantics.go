@@ -101,7 +101,13 @@ var (
 )
 
 // rejectNonFinite refuses non-finite numbers in params (rev CLC-1.4): JSON
-// cannot represent them and NaN compares false against every bound.
+// cannot represent them and NaN compares false against every bound.  It also
+// refuses an integer magnitude past the I-JSON bound on the decoded-object
+// path (rev CLC-1.16 §6.2 step 3).  The check must cover every host integer
+// carrier, not only float64: a caller builds the decoded object by hand, and a
+// Go int64/uint64 (or 64-bit int/uint) carries a value the raw text boundary
+// would have refused, so missing it would allow what the text path denies.
+// int8..int32 and uint8..uint32 cannot exceed 2^53-1 and need no case.
 func rejectNonFinite(v any) error {
 	switch val := v.(type) {
 	case float64:
@@ -109,6 +115,22 @@ func rejectNonFinite(v any) error {
 			return ErrInvalidParamsNumber
 		}
 		if val == math.Trunc(val) && math.Abs(val) > ijsonMaxInteger {
+			return ErrInvalidParamsNumber
+		}
+	case int:
+		if val > ijsonMaxInteger || val < -ijsonMaxInteger {
+			return ErrInvalidParamsNumber
+		}
+	case int64:
+		if val > ijsonMaxInteger || val < -ijsonMaxInteger {
+			return ErrInvalidParamsNumber
+		}
+	case uint:
+		if val > ijsonMaxInteger {
+			return ErrInvalidParamsNumber
+		}
+	case uint64:
+		if val > ijsonMaxInteger {
 			return ErrInvalidParamsNumber
 		}
 	case []any:
@@ -245,22 +267,28 @@ func validateObjectParams(params map[string]any) error {
 // paramsDepth returns the nesting depth of a decoded params value, counting
 // objects and arrays with the params object as level 1 (§6.2 step 4).
 func paramsDepth(v any, depth int) int {
-	max := depth
 	switch t := v.(type) {
 	case map[string]any:
+		max := depth
 		for _, c := range t {
 			if d := paramsDepth(c, depth+1); d > max {
 				max = d
 			}
 		}
+		return max
 	case []any:
+		max := depth
 		for _, c := range t {
 			if d := paramsDepth(c, depth+1); d > max {
 				max = d
 			}
 		}
+		return max
+	default:
+		// A scalar is the leaf of a path, not a level of its own; the spec
+		// counts objects and arrays, with the outermost object as level 1.
+		return depth - 1
 	}
-	return max
 }
 
 // CLCRevision is the language revision this implementation declares and
@@ -302,7 +330,7 @@ func paramsDepth(v any, depth int) int {
 // number identity is the JSON number not its spelling (-0 ≡ 0, 1e3 ≡ 1000), and
 // a non-integer token is pinned to its IEEE-754 binary64 value.  The behavior
 // is what CLC-1.16 already implemented; CLC-1.16 and earlier inputs still read.)
-const CLCRevision = "CLC-1.17"
+const CLCRevision = "CLC-1.19"
 
 const (
 	// maxParamsSerializedBytes bounds the JCS-serialized params size

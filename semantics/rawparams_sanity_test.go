@@ -116,6 +116,15 @@ func TestIJSONIntegerBoundDecoded(t *testing.T) {
 		{"fraction", map[string]any{"n": 1.5}, nil},
 		{"nested_array", map[string]any{"n": []any{float64(ijsonMaxInteger + 2)}}, ErrInvalidParamsNumber},
 		{"nested_object", map[string]any{"n": map[string]any{"m": float64(ijsonMaxInteger + 2)}}, ErrInvalidParamsNumber},
+		// A caller that builds the decoded object by hand may carry a native
+		// integer other than float64; every 64-bit-wide carrier must be refused
+		// as well, or the decoded entry allows an integer the raw path denies.
+		{"at_bound_int64", map[string]any{"n": int64(ijsonMaxInteger)}, nil},
+		{"over_bound_int", map[string]any{"n": int(ijsonMaxInteger + 2)}, ErrInvalidParamsNumber},
+		{"over_bound_int64", map[string]any{"n": int64(ijsonMaxInteger + 2)}, ErrInvalidParamsNumber},
+		{"over_bound_uint", map[string]any{"n": uint(ijsonMaxInteger + 2)}, ErrInvalidParamsNumber},
+		{"over_bound_uint64", map[string]any{"n": uint64(ijsonMaxInteger + 2)}, ErrInvalidParamsNumber},
+		{"nested_int64", map[string]any{"n": []any{int64(ijsonMaxInteger + 2)}}, ErrInvalidParamsNumber},
 	}
 	for _, c := range cases {
 		err := ValidateOperationParams(c.params)
@@ -225,7 +234,9 @@ func TestRevisionCompatible(t *testing.T) {
 		{"CLC-1.15", true},
 		{"CLC-1.16", true},
 		{"CLC-1.17", true},
-		{"CLC-1.18", false},
+		{"CLC-1.18", true},
+		{"CLC-1.19", true},
+		{"CLC-1.20", false},
 		{"CLC-2.0", false},
 		{"CLC-0.9", false},
 		{"x-1.0", false},
@@ -238,8 +249,8 @@ func TestRevisionCompatible(t *testing.T) {
 			t.Errorf("RevisionCompatible(%q) = %v, want %v", c.rev, got, c.want)
 		}
 	}
-	if CLCRevision != "CLC-1.17" {
-		t.Errorf("CLCRevision = %q, want CLC-1.17", CLCRevision)
+	if CLCRevision != "CLC-1.19" {
+		t.Errorf("CLCRevision = %q, want CLC-1.19", CLCRevision)
 	}
 }
 
