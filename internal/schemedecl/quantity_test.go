@@ -37,6 +37,22 @@ func vectorsPath() string {
 	return "../capability/data/_vectors/clc-v1/quantity-vectors.json"
 }
 
+// loadDeclarationOrSkip loads the sample declaration, or skips when the corpus
+// repository is not checked out (the CI matrix does not clone capability; the
+// dedicated clc-conformance workflow does).
+func loadDeclarationOrSkip(t *testing.T) *Declaration {
+	t.Helper()
+	path := declarationPath()
+	if _, err := os.Stat(path); err != nil {
+		t.Skipf("scheme declaration unavailable: %v", err)
+	}
+	d, err := Load(path)
+	if err != nil {
+		t.Fatalf("declaration: %v", err)
+	}
+	return d
+}
+
 type vector struct {
 	ID         string              `json:"id"`
 	Kind       string              `json:"kind"`
@@ -55,10 +71,7 @@ type vector struct {
 // TestQuantityVectors runs the quantity domain corpus against the sample
 // declaration.
 func TestQuantityVectors(t *testing.T) {
-	d, err := Load(declarationPath())
-	if err != nil {
-		t.Fatalf("declaration: %v", err)
-	}
+	d := loadDeclarationOrSkip(t)
 	raw, err := os.ReadFile(vectorsPath())
 	if err != nil {
 		t.Skipf("quantity corpus unavailable: %v", err)
@@ -92,10 +105,7 @@ func TestQuantityVectors(t *testing.T) {
 
 // TestDeclarationValidation pins the fail-closed declaration rules.
 func TestDeclarationValidation(t *testing.T) {
-	base, err := Load(declarationPath())
-	if err != nil {
-		t.Fatalf("declaration: %v", err)
-	}
+	base := loadDeclarationOrSkip(t)
 
 	bad := *base
 	bad.Capabilities = map[string]Capability{
@@ -124,10 +134,7 @@ func TestDeclarationValidation(t *testing.T) {
 // declares but this engine does not implement is refused at evaluation, not
 // compared under the shape rule.
 func TestUnsupportedDomainRefused(t *testing.T) {
-	base, err := Load(declarationPath())
-	if err != nil {
-		t.Fatalf("declaration: %v", err)
-	}
+	base := loadDeclarationOrSkip(t)
 	decl := *base
 	decl.Capabilities = map[string]Capability{
 		"transfer": {Params: map[string]Param{"amount": {Domain: "money"}}},
@@ -142,10 +149,7 @@ func TestUnsupportedDomainRefused(t *testing.T) {
 
 // TestStringDomains covers the three string-shaped declared domains.
 func TestStringDomains(t *testing.T) {
-	base, err := Load(declarationPath())
-	if err != nil {
-		t.Fatalf("declaration: %v", err)
-	}
+	base := loadDeclarationOrSkip(t)
 	raw, err := os.ReadFile(stringVectorsPath())
 	if err != nil {
 		t.Skipf("string-domain corpus unavailable: %v", err)
@@ -204,10 +208,7 @@ func stringVectorsPath() string {
 // parameter must live in params; a param_bounds entry on the same key is
 // invalid_params_binding.
 func TestDeclaredDomainRejectsParamBounds(t *testing.T) {
-	base, err := Load(declarationPath())
-	if err != nil {
-		t.Fatalf("declaration: %v", err)
-	}
+	base := loadDeclarationOrSkip(t)
 	decl := *base
 	g := semantics.Grant{
 		ID:          "std/payments-v1:transfer",
