@@ -31,6 +31,11 @@ jobs:
       - name: go test
         run: go test ./...
 
+      - name: Extension canonical parity fixture (Go)
+        env:
+          CLC_CAPABILITY_DIR: ${{ github.workspace }}/../capability
+        run: go run ./cmd/extension-parity-run
+
       - name: CLC-v1 vectors (verdict + reason)
         env:
           CLC_VECTORS: ${{ github.workspace }}/../capability/data/_vectors/clc-v1/vectors.json
