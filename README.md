@@ -193,7 +193,7 @@ go run ./cmd/vectors-run/
 | `clc-v1/constraint-union-vectors.json` | 12 | `cmd/constraint-union-vectors-run` | `CLC_CONSTRAINT_UNION_VECTORS` |
 | `clc-v1/resolve-vectors.json` | 26 | `cmd/resolve-vectors-run` | `CLC_RESOLVE_VECTORS` |
 | `clc-d/containment-vectors.json` | 64 | `cmd/contains-vectors-run` | `CLC_D_VECTORS` |
-| `clc-d/containment-crosswalk-vectors.json` | 44 | `cmd/contains-crosswalk-run` | `CLC_D_CROSSWALK_VECTORS` |
+| `clc-d/containment-crosswalk-vectors.json` | 45 | `cmd/contains-crosswalk-run` | `CLC_D_CROSSWALK_VECTORS` |
 | `clc-d/reason-collapse-vectors.json` | 3 | `cmd/reason-collapse-vectors-run` | `CLC_D_REASON_COLLAPSE_VECTORS` |
 | `clc-d/profile-owned/aic-jwt-da-mode-lattice-vectors.json` | 5 | `cmd/mode-lattice-vectors-run` | `CLC_D_MODE_VECTORS` |
 | `clc-d/authorize-chain-vectors.json` | 15 | `cmd/authorize-chain-vectors-run` | `CLC_AUTHORIZE_CHAIN_VECTORS` |

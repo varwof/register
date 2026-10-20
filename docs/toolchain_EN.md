@@ -130,7 +130,7 @@ language through rev CLC-1.17, including the `allow_unresolved` verdict,
 §9.1 multi-grant aggregation, the §13 delegation-containment relation, the
 §6.5 extended parameter bounds, the §8.5 `Resolve` consumer loop, the §7.1
 `ConstraintUnion` projection and the §13.11 `AuthorizeWithChain` check); CLC-D
-containment 64/64 vectors, 44/44 crosswalk vectors, 15/15 chain vectors and 784
+containment 64/64 vectors, 45/45 crosswalk vectors, 15/15 chain vectors and 784
 property cases with 0 violations in all three; CLC-1.10 param bounds 49/49,
 CLC-1.11 Resolve 26/26 and CLC-1.12 ConstraintUnion 12/12 in all three; P11
 property 1184 cases with

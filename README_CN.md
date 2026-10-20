@@ -181,7 +181,7 @@ go run ./cmd/vectors-run/
 | `clc-v1/constraint-union-vectors.json` | 12 | `cmd/constraint-union-vectors-run` | `CLC_CONSTRAINT_UNION_VECTORS` |
 | `clc-v1/resolve-vectors.json` | 26 | `cmd/resolve-vectors-run` | `CLC_RESOLVE_VECTORS` |
 | `clc-d/containment-vectors.json` | 64 | `cmd/contains-vectors-run` | `CLC_D_VECTORS` |
-| `clc-d/containment-crosswalk-vectors.json` | 44 | `cmd/contains-crosswalk-run` | `CLC_D_CROSSWALK_VECTORS` |
+| `clc-d/containment-crosswalk-vectors.json` | 45 | `cmd/contains-crosswalk-run` | `CLC_D_CROSSWALK_VECTORS` |
 | `clc-d/authorize-chain-vectors.json` | 15 | `cmd/authorize-chain-vectors-run` | `CLC_AUTHORIZE_CHAIN_VECTORS` |
 
 CLC-A 一组还带有 §7.1 UTF-8 排序（2 条）与 §6.5 类型敏感相等（11 条）用例，以及属性语料
