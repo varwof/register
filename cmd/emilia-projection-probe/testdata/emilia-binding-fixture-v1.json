@@ -1,0 +1,193 @@
+{
+  "@version": "clc-emilia-binding-fixture-v1",
+  "now": "2026-09-13T12:00:00Z",
+  "expected_subject": "qhYb5aZfz3Gl_RpCeLk7LyW9POxu1EIC9t0z8Cif48s",
+  "mapped_requirement": {
+    "@version": "CLC-REQUIREMENT-v1",
+    "requirement_id": "treasury-wire-evidence@7",
+    "expression": "ep-quorum AND policy-permit AND ep:binding:permits",
+    "constraints": [
+      {
+        "role": "ep-quorum",
+        "constraint": "varwof/evidence-v1:freshness:sec:300"
+      },
+      {
+        "role": "policy-permit",
+        "constraint": "varwof/evidence-v1:freshness:sec:600"
+      },
+      {
+        "role": "ep-quorum",
+        "constraint": "varwof/evidence-v1:quorum:distinct:2"
+      }
+    ]
+  },
+  "evidence_cases": [
+    {
+      "id": "EMI-AEC-001",
+      "name": "two verified approvals, permit and binding",
+      "want": "SATISFIED",
+      "expected_got": "SATISFIED",
+      "facts": {
+        "ep-quorum": [
+          {"subject": "alice", "verified": true, "age_sec": 30},
+          {"subject": "bob", "verified": true, "age_sec": 20}
+        ],
+        "policy-permit": [
+          {"subject": "policy", "verified": true, "age_sec": 60}
+        ],
+        "ep:binding:permits": [
+          {"subject": "$binding", "verified": true, "age_sec": 60}
+        ]
+      }
+    },
+    {
+      "id": "EMI-AEC-002",
+      "name": "one approval unverified",
+      "want": "UNSATISFIED",
+      "expected_got": "UNSATISFIED/quorum:distinct_subjects=1<threshold=2",
+      "facts": {
+        "ep-quorum": [
+          {"subject": "alice", "verified": true, "age_sec": 30},
+          {"subject": "bob", "verified": false, "age_sec": 20}
+        ],
+        "policy-permit": [
+          {"subject": "policy", "verified": true, "age_sec": 60}
+        ],
+        "ep:binding:permits": [
+          {"subject": "$binding", "verified": true, "age_sec": 60}
+        ]
+      }
+    },
+    {
+      "id": "EMI-AEC-003",
+      "name": "fresh binding does not refresh an old approval",
+      "want": "UNSATISFIED",
+      "expected_got": "UNSATISFIED/freshness:stale",
+      "facts": {
+        "ep-quorum": [
+          {"subject": "alice", "verified": true, "age_sec": 301},
+          {"subject": "bob", "verified": true, "age_sec": 20}
+        ],
+        "policy-permit": [
+          {"subject": "policy", "verified": true, "age_sec": 60}
+        ],
+        "ep:binding:permits": [
+          {"subject": "$binding", "verified": true, "age_sec": 1}
+        ]
+      }
+    },
+    {
+      "id": "EMI-AEC-004",
+      "name": "missing derived binding fact",
+      "want": "UNSATISFIED",
+      "expected_got": "UNSATISFIED/requirement:expression_false",
+      "facts": {
+        "ep-quorum": [
+          {"subject": "alice", "verified": true, "age_sec": 30},
+          {"subject": "bob", "verified": true, "age_sec": 20}
+        ],
+        "policy-permit": [
+          {"subject": "policy", "verified": true, "age_sec": 60}
+        ]
+      }
+    },
+    {
+      "id": "EMI-AEC-005",
+      "name": "facts typed ep-human-authorization (literal component_type)",
+      "want": "UNSATISFIED",
+      "expected_got": "UNSATISFIED/requirement:expression_false",
+      "facts": {
+        "ep-human-authorization": [
+          {"subject": "alice", "verified": true, "age_sec": 30},
+          {"subject": "bob", "verified": true, "age_sec": 20}
+        ],
+        "policy-permit": [
+          {"subject": "policy", "verified": true, "age_sec": 60}
+        ],
+        "ep:binding:permits": [
+          {"subject": "$binding", "verified": true, "age_sec": 60}
+        ]
+      }
+    }
+  ],
+  "caid": {
+    "type": {
+      "name": "tool.call.1",
+      "material": ["tool", "args"]
+    },
+    "suite": "jcs-sha256",
+    "operation": {
+      "tool": "payments.transfer",
+      "args": {"amount": 3000, "currency": "CNY"}
+    },
+    "cases": [
+      {
+        "id": "EMI-CAID-001",
+        "name": "same tool+args, extra occurrence_id",
+        "observed": {
+          "tool": "payments.transfer",
+          "args": {"amount": 3000, "currency": "CNY"},
+          "occurrence_id": "ignored-not-material"
+        },
+        "want": "MATCH"
+      },
+      {
+        "id": "EMI-CAID-002",
+        "name": "args amount changed",
+        "observed": {
+          "tool": "payments.transfer",
+          "args": {"amount": 3001, "currency": "CNY"}
+        },
+        "want": "NOT_EQUIVALENT"
+      }
+    ]
+  },
+  "binding": {
+    "source": {
+      "type": "policy-permit",
+      "artifact_id": "permit-7",
+      "policy_generation": "policy-7",
+      "subject": "policy",
+      "issued_at": "2026-09-13T11:59:00Z",
+      "verified": true
+    },
+    "targets": [
+      {
+        "type": "ep-quorum",
+        "artifact_id": "approval-alice",
+        "subject": "alice",
+        "issued_at": "2026-09-13T11:59:30Z",
+        "verified": true
+      },
+      {
+        "type": "ep-quorum",
+        "artifact_id": "approval-bob",
+        "subject": "bob",
+        "issued_at": "2026-09-13T11:59:40Z",
+        "verified": true
+      }
+    ],
+    "action": {
+      "type": "tool.call.1",
+      "tool": "payments.transfer",
+      "args": {"amount": 3000, "currency": "CNY"}
+    },
+    "status": {
+      "outcome": "valid",
+      "source": "aeb-status",
+      "checked_at": "2026-09-13T12:00:00Z",
+      "valid_until": "2026-09-13T12:01:00Z",
+      "revocation_generation": "rev-42"
+    },
+    "trust": {
+      "verifier": "native-verifier",
+      "result": "verified"
+    }
+  },
+  "mutations": {
+    "source": {"path": ["source", "artifact_id"], "value": "permit-8"},
+    "target": {"path": ["targets", 1, "subject"], "value": "mallory"},
+    "action": {"path": ["action", "args", "amount"], "value": 3001},
+    "status": {"path": ["status", "outcome"], "value": "revoked"}
+  }
+}

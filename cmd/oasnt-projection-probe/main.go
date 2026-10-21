@@ -83,13 +83,14 @@ func main() {
 
 	fmt.Println("1. Action binding (adg) against the presented action")
 	for _, c := range []struct {
+		caseID string
 		name   string
 		params map[string]string
 		want   string
 	}{
-		{"same action", approved, "MATCH"},
-		{"amount 3001", map[string]string{"amount": "3001", "currency": "CNY"}, "NOT_EQUIVALENT"},
-		{"extra parameter added", map[string]string{"amount": "3000", "currency": "CNY", "memo": "x"}, "NOT_EQUIVALENT"},
+		{"OAS-ADG-001", "same action", approved, "MATCH"},
+		{"OAS-ADG-002", "amount 3001", map[string]string{"amount": "3001", "currency": "CNY"}, "NOT_EQUIVALENT"},
+		{"OAS-ADG-003", "extra parameter added", map[string]string{"amount": "3000", "currency": "CNY", "memo": "x"}, "NOT_EQUIVALENT"},
 	} {
 		got := "NOT_EQUIVALENT"
 		if adg(typ, c.params) == tk.ADG {
@@ -99,7 +100,7 @@ func main() {
 		if got != c.want {
 			status = "FAIL"
 		}
-		fmt.Printf("   %-28s want %-15s got %-15s %s\n", c.name, c.want, got, status)
+		fmt.Printf("%s %s %-28s want=%s got=%s\n", status, c.caseID, c.name, c.want, got)
 	}
 	fmt.Println()
 
@@ -119,14 +120,15 @@ func main() {
 	}
 	now := time.Date(2026, 9, 13, 12, 0, 0, 0, time.UTC)
 	for _, c := range []struct {
+		caseID   string
 		name     string
 		verified bool
 		ago      time.Duration
 		want     string
 	}{
-		{"int=clean, approved 30s ago", true, 30 * time.Second, "SATISFIED"},
-		{"int=compromised (not eligible)", false, 30 * time.Second, "UNSATISFIED"},
-		{"approved 301s ago", true, 301 * time.Second, "UNSATISFIED"},
+		{"OAS-FACT-001", "int=clean, approved 30s ago", true, 30 * time.Second, "SATISFIED"},
+		{"OAS-FACT-002", "int=compromised (not eligible)", false, 30 * time.Second, "UNSATISFIED"},
+		{"OAS-FACT-003", "approved 301s ago", true, 301 * time.Second, "UNSATISFIED"},
 	} {
 		facts := []semantics.EvidenceFact{{
 			Type: "human-authorization", Subject: tk.Sub, Verified: c.verified,
@@ -141,7 +143,7 @@ func main() {
 		if got != c.want {
 			status = "FAIL"
 		}
-		fmt.Printf("   %-32s want %-11s got %-11s %s\n", c.name, c.want, got, status)
+		fmt.Printf("%s %s %-32s want=%s got=%s\n", status, c.caseID, c.name, c.want, got)
 	}
 	fmt.Println()
 

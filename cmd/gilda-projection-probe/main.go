@@ -77,15 +77,16 @@ func project(r record) (string, []string) {
 
 func main() {
 	cases := []struct {
-		rec  record
-		want string
+		caseID string
+		rec    record
+		want   string
 	}{
-		{record{"g-1", "permit", "evaluated", nil, "occurred", "agree"}, "allow"},
-		{record{"g-2", "permit-with-conditions", "evaluated", nil, "occurred", "agree"}, "allow_unresolved"},
-		{record{"g-3", "deny", "evaluated", nil, "occurred", "disagree"}, "deny"},
-		{record{"g-4", "permit", "not-evaluated", []string{"standing source"}, "occurred", "indeterminate"}, "allow_unresolved"},
-		{record{"g-5", "deny", "not-evaluated", []string{"consumption state"}, "occurred", "indeterminate"}, "deny"},
-		{record{"g-6", "permit", "evaluated", nil, "not-observed", "one-sided"}, "allow"},
+		{"GIL-001", record{"g-1", "permit", "evaluated", nil, "occurred", "agree"}, "allow"},
+		{"GIL-002", record{"g-2", "permit-with-conditions", "evaluated", nil, "occurred", "agree"}, "allow_unresolved"},
+		{"GIL-003", record{"g-3", "deny", "evaluated", nil, "occurred", "disagree"}, "deny"},
+		{"GIL-004", record{"g-4", "permit", "not-evaluated", []string{"standing source"}, "occurred", "indeterminate"}, "allow_unresolved"},
+		{"GIL-005", record{"g-5", "deny", "not-evaluated", []string{"consumption state"}, "occurred", "indeterminate"}, "deny"},
+		{"GIL-006", record{"g-6", "permit", "evaluated", nil, "not-observed", "one-sided"}, "allow"},
 	}
 
 	fmt.Println("Gilda audit record → CLC result vocabulary")
@@ -97,8 +98,8 @@ func main() {
 		if got != c.want {
 			status = "FAIL"
 		}
-		fmt.Printf("%s  reported=%-22s status=%-13s observed=%-12s agreement=%-13s -> CLC %-16s want %-16s %s\n",
-			c.rec.ID, c.rec.Reported, c.rec.Status, c.rec.Observed, c.rec.Agreement, got, c.want, status)
+		fmt.Printf("%s %s  record=%s reported=%-22s status=%-13s observed=%-12s agreement=%-13s want=%s got=%s\n",
+			status, c.caseID, c.rec.ID, c.rec.Reported, c.rec.Status, c.rec.Observed, c.rec.Agreement, c.want, got)
 		for _, r := range residual {
 			fmt.Println("      residual: " + r)
 		}

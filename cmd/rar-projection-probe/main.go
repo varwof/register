@@ -97,16 +97,17 @@ func main() {
 
 	fmt.Println("2. Operations")
 	cases := []struct {
+		caseID string
 		name   string
 		id     string
 		amount float64
 		cur    string
 		want   string
 	}{
-		{"transfer 3000 CNY", scheme + ":payment:transfer", 3000, "CNY", "allow"},
-		{"transfer 6000 CNY (above bound)", scheme + ":payment:transfer", 6000, "CNY", "deny"},
-		{"transfer 3000 USD (not the enum)", scheme + ":payment:transfer", 3000, "USD", "deny"},
-		{"refund 1000 CNY (second action)", scheme + ":payment:refund", 1000, "CNY", "allow"},
+		{"RAR-001", "transfer 3000 CNY", scheme + ":payment:transfer", 3000, "CNY", "allow"},
+		{"RAR-002", "transfer 6000 CNY (above bound)", scheme + ":payment:transfer", 6000, "CNY", "deny"},
+		{"RAR-003", "transfer 3000 USD (not the enum)", scheme + ":payment:transfer", 3000, "USD", "deny"},
+		{"RAR-004", "refund 1000 CNY (second action)", scheme + ":payment:refund", 1000, "CNY", "allow"},
 	}
 	for _, c := range cases {
 		op := semantics.Operation{ID: c.id, Params: map[string]any{
@@ -127,7 +128,7 @@ func main() {
 		if dec.Verdict != c.want {
 			status = "FAIL"
 		}
-		fmt.Printf("   %-36s want %-6s got %-28s %s\n", c.name, c.want, got, status)
+		fmt.Printf("%s %s %-36s want=%s got=%s\n", status, c.caseID, c.name, c.want, got)
 	}
 	fmt.Println()
 	fmt.Println("Reading: actions multiply into grants, type-specific fields become params,")

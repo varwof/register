@@ -16,6 +16,7 @@ package main
 
 import (
 	"fmt"
+	"reflect"
 	"strings"
 
 	"github.com/varwof/register/semantics"
@@ -96,7 +97,19 @@ func main() {
 
 	rootGrants, rootRes := toGrants(root)
 	leafGrants, leafRes := toGrants(leaf)
+	rootWant := []semantics.Grant{
+		{ID: scopeScheme + ":crm:customer:read", Params: map[string]any{"max_rows": float64(5000)}},
+		{ID: scopeScheme + ":crm:customer:write", Params: map[string]any{"max_rows": float64(5000)}},
+		{ID: scopeScheme + ":crm:*", Params: map[string]any{"max_rows": float64(5000)}},
+	}
+	leafWant := []semantics.Grant{
+		{ID: scopeScheme + ":crm:customer:read", Params: map[string]any{"max_rows": float64(3000)}},
+	}
 	fmt.Println("1. Mapping")
+	reportASORCase("ASOR-001", "root token maps to three grants", "mapping-exact",
+		fmt.Sprintf("grants=%d", len(rootGrants)), reflect.DeepEqual(rootGrants, rootWant))
+	reportASORCase("ASOR-002", "leaf token maps to one grant", "mapping-exact",
+		fmt.Sprintf("grants=%d", len(leafGrants)), reflect.DeepEqual(leafGrants, leafWant))
 	for _, g := range rootGrants {
 		fmt.Printf("   %-30s params=%v\n", g.ID, g.Params)
 	}
@@ -118,6 +131,7 @@ func main() {
 	fmt.Println()
 
 	fmt.Println("2. Set containment (every leaf grant inside some root grant)")
+	allContained := true
 	for _, cg := range leafGrants {
 		ok := false
 		reason := ""
@@ -134,21 +148,25 @@ func main() {
 		} else if reason == "" {
 			reason = "no parent grant covers the identifier"
 		}
+		allContained = allContained && ok
 		fmt.Printf("   %-30s contains=%v (%s)\n", cg.ID, ok, reason)
 	}
+	reportASORCase("ASOR-003", "every leaf grant is contained", "contains=true",
+		fmt.Sprintf("contains=%t", allContained), allContained)
 	fmt.Println()
 
 	fmt.Println("3. Chain authorization for an operation")
 	cases := []struct {
-		name string
-		id   string
-		rows float64
-		want string
+		caseID string
+		name   string
+		id     string
+		rows   float64
+		want   string
 	}{
-		{"read, max_rows 2000 (inside leaf)", scopeScheme + ":crm:customer:read", 2000, "allow"},
-		{"read, max_rows 3000 (at leaf bound)", scopeScheme + ":crm:customer:read", 3000, "allow"},
-		{"read, max_rows 3001 (above leaf)", scopeScheme + ":crm:customer:read", 3001, "deny"},
-		{"write (root only, leaf lacks it)", scopeScheme + ":crm:customer:write", 1000, "no-chain"},
+		{"ASOR-004", "read, max_rows 2000 (inside leaf)", scopeScheme + ":crm:customer:read", 2000, "allow"},
+		{"ASOR-005", "read, max_rows 3000 (at leaf bound)", scopeScheme + ":crm:customer:read", 3000, "allow"},
+		{"ASOR-006", "read, max_rows 3001 (above leaf)", scopeScheme + ":crm:customer:read", 3001, "deny"},
+		{"ASOR-007", "write (root only, leaf lacks it)", scopeScheme + ":crm:customer:write", 1000, "no-chain"},
 	}
 	for _, c := range cases {
 		chain, ok := selectChain([]dt{root, leaf}, [][]semantics.Grant{rootGrants, leafGrants}, c.id)
@@ -166,13 +184,21 @@ func main() {
 		if !strings.HasPrefix(got, c.want) {
 			status = "FAIL"
 		}
-		fmt.Printf("   %-38s want %-8s got %-28s %s\n", c.name, c.want, got, status)
+		fmt.Printf("%s %s %-38s want=%s got=%s\n", status, c.caseID, c.name, c.want, got)
 	}
 	fmt.Println()
 	fmt.Println("Reading: CLC decides the scope/constraint subset steps; par_hash, depth,")
 	fmt.Println("mode, standing and status stay with the carrier.  Note that one ASOR token")
 	fmt.Println("maps to *several* CLC grants (one per scope), so a chain is selected per")
 	fmt.Println("operation — a mapping rule the binding profile has to state.")
+}
+
+func reportASORCase(caseID, name, want, got string, ok bool) {
+	status := "PASS"
+	if !ok {
+		status = "FAIL"
+	}
+	fmt.Printf("%s %s %-38s want=%s got=%s\n", status, caseID, name, want, got)
 }
 
 // selectChain picks, for each hop, the first grant that covers the operation id.
