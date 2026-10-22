@@ -48,6 +48,9 @@ go get github.com/varwof/register@v0.9.0
 ```
 register/
 ├── semantics/        # CLC-v1 decision layer (grammar, entailment, decision)
+├── schemeadmin/      # CLC-SCHEME-v1 administration (package, transition, confirm)
+├── catalog/          # signed capability catalog plane (catalog, delta, discovery)
+├── projection/       # foreign-evidence → CLC-REQUIREMENT-v1 projection (CLC-E)
 ├── ruleexec/         # execution layer (rules, conditions, flow, budgets, SQL)
 ├── schema.go / registry.go / validator.go / mincap.go
 ├── genauthz.go / gendocs.go / sign.go / loader.go / params_validate.go
@@ -68,6 +71,11 @@ register/
 | `gen-backfill` | backfill derived fields into existing schemes |
 | `gen-rule` | sign a `ruleexec` rule against its signer grant |
 | `sign` / `verify` | PKCS#7 sign / verify a capability file |
+| `scheme-admin` | scheme administration: check/confirm a `CLC-SCHEME-PACKAGE-v1`, verify package/transition/delegation signatures, root rotation threshold, signed approvals, capability ids; `--state-out` persists an accepted state with signed tombstones |
+| `gen-catalog` | validate a catalog and write its deterministic JCS form (the bytes to sign) |
+| `sign-catalog` | detached PKCS#7 sign a catalog after binding `producer` to the signer's AIC |
+| `verify-catalog` | verify a signed catalog against policy/state and advance the accepted generation |
+| `apply-catalog-delta` | verify a signed delta against an exact base generation/digest, accepted state, trust roots and policy, then write the next catalog |
 | `record` | create and re-verify a Decision Record (`-verify`, `-envelope`) |
 | `size-report` | byte budget of the optional artifacts (record / envelope / challenge) |
 | `vectors-run` | CLC-A authorization corpus |

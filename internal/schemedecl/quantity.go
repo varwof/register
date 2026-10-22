@@ -16,9 +16,12 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 
+	"github.com/varwof/register/internal/jsonstrict"
 	"github.com/varwof/register/semantics"
 )
 
@@ -116,7 +119,7 @@ func (d *Declaration) computeDigest() (string, error) {
 		return "", err
 	}
 	delete(m, "digest")
-	canonical, err := json.Marshal(m) // map keys are marshaled in sorted order
+	canonical, err := semantics.CanonicalJSON(m)
 	if err != nil {
 		return "", err
 	}
@@ -147,6 +150,14 @@ func (d *Declaration) domainMap(capability string) semantics.DomainMap {
 	return dm
 }
 
+// DomainMap exposes the declaration's per-parameter domain spec for one
+// capability.  Callers outside this package use it to drive the CLC-1.19
+// `*WithDomains` relations; an unknown capability yields nil, which restores
+// the shape-inferred default.
+func (d *Declaration) DomainMap(capability string) semantics.DomainMap {
+	return d.domainMap(capability)
+}
+
 // Authorize applies the declaration's quantity normalization, then runs the
 // ordinary multi-grant authorization.
 func (d *Declaration) Authorize(capability string, grants []semantics.Grant, op semantics.Operation) semantics.Decision {
@@ -163,14 +174,20 @@ func (d *Declaration) Contains(capability string, parent, child semantics.Grant)
 
 // DigestOf computes the declaration's digest for a raw object (test helper).
 func DigestOf(raw []byte) (string, error) {
+	if err := jsonstrict.Check(raw); err != nil {
+		return "", err
+	}
 	var m map[string]any
 	dec := json.NewDecoder(bytes.NewReader(raw))
 	dec.UseNumber()
 	if err := dec.Decode(&m); err != nil {
 		return "", err
 	}
+	if err := dec.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		return "", fmt.Errorf("trailing data after the declaration")
+	}
 	delete(m, "digest")
-	enc, err := json.Marshal(m)
+	enc, err := semantics.CanonicalJSON(m)
 	if err != nil {
 		return "", err
 	}

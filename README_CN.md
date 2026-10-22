@@ -48,6 +48,9 @@ go get github.com/varwof/register@v0.9.0
 ```
 register/
 ├── semantics/        # CLC-v1 判定层（文法、蕴含、判定）
+├── schemeadmin/      # CLC-SCHEME-v1 方案管理（package、transition、confirm）
+├── catalog/          # 签名能力目录平面（catalog、delta、discovery）
+├── projection/       # 外部证据 → CLC-REQUIREMENT-v1 投影（CLC-E）
 ├── ruleexec/         # 执行层（规则、条件、流、预算、SQL）
 ├── schema.go / registry.go / validator.go / mincap.go
 ├── genauthz.go / gendocs.go / sign.go / loader.go / params_validate.go
@@ -68,6 +71,11 @@ register/
 | `gen-backfill` | 向既有 scheme 回填派生字段 |
 | `gen-rule` | 用签名者授予对 `ruleexec` 规则签名 |
 | `sign` / `verify` | 对能力文件做 PKCS#7 签名 / 验签 |
+| `scheme-admin` | 方案管理：校验/确认 `CLC-SCHEME-PACKAGE-v1`，验证包/transition/委派签名、根轮换阈值、签名批准、能力 ID；`--state-out` 持久化带签名 tombstone 的已接受状态 |
+| `gen-catalog` | 校验目录并写出其确定性 JCS 形式（待签名字节） |
+| `sign-catalog` | 在 producer 与签名者 AIC 绑定后对目录做分离式 PKCS#7 签名 |
+| `verify-catalog` | 按策略/状态验证签名目录并推进已接受代次 |
+| `apply-catalog-delta` | 按精确基线代次/摘要、已接受状态、信任根与策略验证签名增量，再写出下一代目录 |
 | `record` | 创建并重新验证决策记录（`-verify`、`-envelope`） |
 | `size-report` | 可选产物的字节预算（记录 / 信封 / 挑战） |
 | `vectors-run` | CLC-A 授权语料 |

@@ -18,6 +18,7 @@ import (
 	"math/big"
 	"path"
 	"regexp"
+	"strconv"
 	"strings"
 	"unicode"
 )
@@ -340,6 +341,14 @@ func normalizeDomainName(s string) string {
 	return s
 }
 
+// Decimal literals are bounded so an untrusted exponent cannot turn a value
+// comparison into an unbounded big.Int allocation.  The bound is far above any
+// practical CLC parameter while keeping 10^exp cheap.
+const (
+	maxDecimalExponent = 10000
+	maxDecimalMantissa = 10000
+)
+
 // parseDecimal parses a decimal string (optionally with an exponent) into an
 // exact rational, so value-space comparison never goes through float64.
 func parseDecimal(s string) (*big.Rat, bool) {
@@ -355,6 +364,9 @@ func parseDecimal(s string) (*big.Rat, bool) {
 		}
 		exp = e
 	}
+	if len(mantissa) > maxDecimalMantissa {
+		return nil, false
+	}
 	r := new(big.Rat)
 	if _, ok := r.SetString(mantissa); !ok {
 		return nil, false
@@ -362,11 +374,15 @@ func parseDecimal(s string) (*big.Rat, bool) {
 	if exp == 0 {
 		return r, true
 	}
-	pow := new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(absInt(exp))), nil)
-	if exp > 0 {
-		r.Mul(r, new(big.Rat).SetInt(pow))
-	} else {
+	negExp := exp < 0
+	if negExp {
+		exp = -exp // safe: parseIntStrict bounds exp to +/-maxDecimalExponent
+	}
+	pow := new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(exp)), nil)
+	if negExp {
 		r.Quo(r, new(big.Rat).SetInt(pow))
+	} else {
+		r.Mul(r, new(big.Rat).SetInt(pow))
 	}
 	return r, true
 }
@@ -375,32 +391,14 @@ func parseIntStrict(s string) (int, error) {
 	if s == "" {
 		return 0, strconvErr()
 	}
-	neg := false
-	if s[0] == '+' || s[0] == '-' {
-		neg = s[0] == '-'
-		s = s[1:]
-	}
-	if s == "" {
+	n, err := strconv.ParseInt(s, 10, 32)
+	if err != nil {
 		return 0, strconvErr()
 	}
-	n := 0
-	for _, r := range s {
-		if r < '0' || r > '9' {
-			return 0, strconvErr()
-		}
-		n = n*10 + int(r-'0')
+	if n < -maxDecimalExponent || n > maxDecimalExponent {
+		return 0, strconvErr()
 	}
-	if neg {
-		n = -n
-	}
-	return n, nil
-}
-
-func absInt(n int) int {
-	if n < 0 {
-		return -n
-	}
-	return n
+	return int(n), nil
 }
 
 func strconvErr() error { return errors.New("invalid exponent") }
