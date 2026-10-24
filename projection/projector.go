@@ -12,11 +12,12 @@ import (
 // ProjectedView is the minimal view the CLC decision layer needs from an
 // external evidence document.
 type ProjectedView struct {
-	Action      *semantics.ActionId
-	Facts       []semantics.EvidenceFact
-	Requirement *semantics.Requirement
-	Residuals   []string
-	Meta        map[string]string
+	Action               *semantics.ActionId
+	Facts                []semantics.EvidenceFact
+	Requirement          *semantics.Requirement
+	Residuals            []string
+	RequiredNativeChecks []string
+	Meta                 map[string]string
 }
 
 // Context carries the pins a projection needs.

@@ -38,6 +38,8 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+
+	"github.com/varwof/register/internal/jsonstrict"
 )
 
 // RequirementVersion is the only @version this revision accepts.
@@ -80,6 +82,9 @@ var (
 // revision does not define is an error, never silently dropped.  (AEC §4's
 // requirement is likewise a closed object.)
 func ParseRequirement(raw []byte) (Requirement, error) {
+	if err := jsonstrict.Check(raw); err != nil {
+		return Requirement{}, fmt.Errorf("%w: %v", ErrRequirementShape, err)
+	}
 	dec := json.NewDecoder(bytes.NewReader(raw))
 	dec.DisallowUnknownFields()
 	var req Requirement

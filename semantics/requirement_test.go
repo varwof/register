@@ -48,6 +48,11 @@ func TestRequirementValidateAndParse(t *testing.T) {
 		t.Errorf("unknown member: got %v, want ErrRequirementShape", err)
 	}
 
+	duplicateMember := []byte(`{"@version":"CLC-REQUIREMENT-v1","requirement_id":"r@1","expression":"a","expression":"b"}`)
+	if _, err := ParseRequirement(duplicateMember); !errors.Is(err, ErrRequirementShape) {
+		t.Errorf("duplicate member: got %v, want ErrRequirementShape", err)
+	}
+
 	badVersion := req
 	badVersion.Version = "CLС-REQUIREMENT-v2"
 	if err := badVersion.Validate(); !errors.Is(err, ErrRequirementVersion) {

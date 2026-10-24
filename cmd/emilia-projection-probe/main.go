@@ -8,7 +8,9 @@
 // Inputs are taken from the published drafts (checked 2026-10-17):
 //   - EP-AEC-REQUIREMENT-v1 example: draft-schrock-ep-authorization-evidence-chain-08 §4
 //   - facts a native verifier would produce: AEB-07 §5.2/§5.6 terms
-//   - action identity: draft-schrock-canonical-action-identifier-05 §4.7 (tool.call.1)
+//   - action shape: draft-schrock-canonical-action-identifier-05 §4.7
+//     (tool.call.1); this probe checks CLC's independent material projection
+//     and does not claim to parse or map a CAID wire identifier
 //
 // It prints one line per probe: what was mapped, what CLC decided, and what the
 // mapping could not carry (residuals).
@@ -25,41 +27,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/varwof/register/projection"
 	"github.com/varwof/register/semantics"
 )
-
-// aecRequirement mirrors the EP-AEC-REQUIREMENT-v1 example in AEC-08 §4.
-type aecRequirement struct {
-	Version         string         `json:"@version"`
-	RequirementID   string         `json:"requirement_id"`
-	Purpose         string         `json:"purpose"`
-	Expression      string         `json:"expression"`
-	FreshnessSec    map[string]int `json:"freshness_sec"`
-	StatusRequired  []string       `json:"status_required"`
-	RoleConstraints []struct {
-		Type          string `json:"type"`
-		ComponentType string `json:"component_type"`
-		Threshold     int    `json:"threshold"`
-		SubjectSource string `json:"subject_id_source"`
-	} `json:"role_constraints"`
-	RequiredBindings []struct {
-		FromType string `json:"from_type"`
-		Relation string `json:"relation"`
-		ToType   string `json:"to_type"`
-	} `json:"required_bindings"`
-}
-
-type clcConstraint struct {
-	Role       string `json:"role"`
-	Constraint string `json:"constraint"`
-}
-
-type clcRequirement struct {
-	Version       string          `json:"@version"`
-	RequirementID string          `json:"requirement_id"`
-	Expression    string          `json:"expression"`
-	Constraints   []clcConstraint `json:"constraints,omitempty"`
-}
 
 const aecExample = `{
   "@version": "EP-AEC-REQUIREMENT-v1",
@@ -76,65 +46,6 @@ const aecExample = `{
     {"from_type": "policy-permit", "relation": "permits", "to_type": "ep-quorum"}
   ]
 }`
-
-// mapRequirement projects the AEC object onto CLC-REQUIREMENT-v1.  It returns
-// the mapped object and the list of things the projection could not carry.
-func mapRequirement(a aecRequirement, quorumRole string) (clcRequirement, []string) {
-	out := clcRequirement{
-		Version:       "CLC-REQUIREMENT-v1",
-		RequirementID: a.RequirementID,
-		Expression:    a.Expression,
-	}
-	var residual []string
-	expressionParts := []string{a.Expression}
-
-	roles := make([]string, 0, len(a.FreshnessSec))
-	for r := range a.FreshnessSec {
-		roles = append(roles, r)
-	}
-	sort.Strings(roles)
-	for _, r := range roles {
-		out.Constraints = append(out.Constraints, clcConstraint{
-			Role:       r,
-			Constraint: fmt.Sprintf("varwof/evidence-v1:freshness:sec:%d", a.FreshnessSec[r]),
-		})
-	}
-	for _, rc := range a.RoleConstraints {
-		if rc.Type != "distinct-subject-quorum" {
-			residual = append(residual, "role_constraint "+rc.Type+": not expressible")
-			continue
-		}
-		out.Constraints = append(out.Constraints, clcConstraint{
-			Role:       quorumRole,
-			Constraint: fmt.Sprintf("varwof/evidence-v1:quorum:distinct:%d", rc.Threshold),
-		})
-		if rc.ComponentType != quorumRole {
-			residual = append(residual, fmt.Sprintf(
-				"quorum role mapped from component_type %q, but the expression names %q",
-				rc.ComponentType, quorumRole))
-		}
-		if rc.SubjectSource != "" {
-			residual = append(residual, "subject_id_source="+rc.SubjectSource+": carrier-owned")
-		}
-	}
-	for _, r := range a.StatusRequired {
-		residual = append(residual, "status_required["+r+"]: carrier-owned, no CLC constraint")
-	}
-	for _, b := range a.RequiredBindings {
-		role := bindingRoleName(b.Relation)
-		expressionParts = append(expressionParts, role)
-		residual = append(residual, fmt.Sprintf(
-			"required_binding %s -%s-> %s: native verifier must emit derived role %s; the projection does not satisfy it",
-			b.FromType, b.Relation, b.ToType, role))
-	}
-	residual = append(residual, "purpose: descriptive, dropped")
-	out.Expression = strings.Join(expressionParts, " AND ")
-	return out, residual
-}
-
-func bindingRoleName(relation string) string {
-	return "ep:binding:" + relation
-}
 
 func digestJSON(v any) string {
 	raw, err := semantics.CanonicalJSON(v)
@@ -161,7 +72,8 @@ type bindingMutation struct {
 type bindingFixtureDocument struct {
 	Now               string                     `json:"now"`
 	ExpectedSubject   string                     `json:"expected_subject"`
-	MappedRequirement clcRequirement             `json:"mapped_requirement"`
+	BindingRole       string                     `json:"binding_role"`
+	MappedRequirement semantics.Requirement      `json:"mapped_requirement"`
 	Binding           bindingFixture             `json:"binding"`
 	Mutations         map[string]bindingMutation `json:"mutations"`
 }
@@ -272,13 +184,8 @@ func facts(now time.Time, entities map[string][]struct {
 	return out
 }
 
-func evaluate(req clcRequirement, fs []semantics.EvidenceFact, now time.Time) string {
-	raw, _ := json.Marshal(req)
-	r, err := semantics.ParseRequirement(raw)
-	if err != nil {
-		return "parse error: " + err.Error()
-	}
-	res, err := semantics.EvaluateRequirement(r, fs, semantics.EvidenceContext{Now: now})
+func evaluate(req semantics.Requirement, fs []semantics.EvidenceFact, now time.Time) string {
+	res, err := semantics.EvaluateRequirement(req, fs, semantics.EvidenceContext{Now: now})
 	if err != nil {
 		return "eval error: " + err.Error()
 	}
@@ -290,17 +197,25 @@ func evaluate(req clcRequirement, fs []semantics.EvidenceFact, now time.Time) st
 }
 
 func main() {
-	var aec aecRequirement
-	if err := json.Unmarshal([]byte(aecExample), &aec); err != nil {
-		panic(err)
-	}
 	now := fixtureNow()
 
 	fmt.Println("EMILIA → CLC evidence projection probe")
 	fmt.Println("AEC requirement: draft-schrock-ep-authorization-evidence-chain-08 §4")
 	fmt.Println()
 
-	mapped, residual := mapRequirement(aec, "ep-quorum")
+	projected, err := projection.Project([]byte(aecExample), projection.Options{
+		Now: now,
+		RoleMap: map[string]string{
+			"ep-human-authorization": "ep-quorum",
+			"ep-quorum":              "ep-quorum",
+			"policy-permit":          "policy-permit",
+		},
+	})
+	if err != nil {
+		panic(err)
+	}
+	mapped := *projected.Requirement
+	residual := projected.Residuals
 	fixtureDoc := loadBindingFixture()
 	mappedWant, _ := semantics.CanonicalJSON(fixtureDoc.MappedRequirement)
 	mappedGot, _ := semantics.CanonicalJSON(mapped)
@@ -314,7 +229,17 @@ func main() {
 	for _, r := range residual {
 		fmt.Println("   - " + r)
 	}
-	bindingRole := bindingRoleName("permits")
+	fmt.Println("   required native checks:")
+	for _, r := range projected.RequiredNativeChecks {
+		fmt.Println("   - " + r)
+	}
+	bindingRole, err := projection.BindingRoleName("policy-permit", "permits", "ep-quorum")
+	if err != nil {
+		panic(err)
+	}
+	if bindingRole != fixtureDoc.BindingRole {
+		panic("binding role differs from shared fixture")
+	}
 	bindingFixture := baseBindingFixture()
 	bindingTuple, _ := semantics.CanonicalJSON(bindingFixture.tuple())
 	fmt.Printf("   derived binding role: %s\n", bindingRole)
@@ -371,7 +296,7 @@ func main() {
 	}
 	fmt.Println()
 
-	fmt.Println("3. CAID action identity → CLC §4.2 projection")
+	fmt.Println("3. CLC material action identity (CAID parser/mapping not exercised)")
 	def := semantics.ActionTypeDefinition{Type: "tool.call.1", MaterialFields: []string{"tool", "args"}}
 	op := map[string]any{"tool": "payments.transfer", "args": map[string]any{"amount": 3000, "currency": "CNY"}}
 	observedSame := map[string]any{"tool": "payments.transfer", "args": map[string]any{"amount": 3000, "currency": "CNY"}, "occurrence_id": "ignored-not-material"}
@@ -386,8 +311,8 @@ func main() {
 		act    map[string]any
 		want   string
 	}{
-		{"EMI-CAID-001", "same tool+args, extra occurrence_id", observedSame, "MATCH"},
-		{"EMI-CAID-002", "args amount changed", observedDiff, "NOT_EQUIVALENT"},
+		{"EMI-CAID-001", "CLC projection: extra non-material occurrence_id", observedSame, "MATCH"},
+		{"EMI-CAID-002", "CLC projection: material args amount changed", observedDiff, "NOT_EQUIVALENT"},
 	} {
 		id, err := semantics.ComputeActionID(def, semantics.SuiteJCSSHA256, mustProject(def, c.act))
 		got := "error"

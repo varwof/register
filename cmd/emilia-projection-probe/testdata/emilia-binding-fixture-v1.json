@@ -2,10 +2,12 @@
   "@version": "clc-emilia-binding-fixture-v1",
   "now": "2026-09-13T12:00:00Z",
   "expected_subject": "qhYb5aZfz3Gl_RpCeLk7LyW9POxu1EIC9t0z8Cif48s",
+  "binding_role": "ep:binding:permits:f4457486553c090095ca81e334af8c9a9e1cff794a0e6403431a7349d68af3c1",
   "mapped_requirement": {
     "@version": "CLC-REQUIREMENT-v1",
     "requirement_id": "treasury-wire-evidence@7",
-    "expression": "ep-quorum AND policy-permit AND ep:binding:permits",
+    "purpose": "pre-execution evidence check",
+    "expression": "(ep-quorum AND policy-permit) AND ep:binding:permits:f4457486553c090095ca81e334af8c9a9e1cff794a0e6403431a7349d68af3c1",
     "constraints": [
       {
         "role": "ep-quorum",
@@ -35,7 +37,7 @@
         "policy-permit": [
           {"subject": "policy", "verified": true, "age_sec": 60}
         ],
-        "ep:binding:permits": [
+        "ep:binding:permits:f4457486553c090095ca81e334af8c9a9e1cff794a0e6403431a7349d68af3c1": [
           {"subject": "$binding", "verified": true, "age_sec": 60}
         ]
       }
@@ -53,7 +55,7 @@
         "policy-permit": [
           {"subject": "policy", "verified": true, "age_sec": 60}
         ],
-        "ep:binding:permits": [
+        "ep:binding:permits:f4457486553c090095ca81e334af8c9a9e1cff794a0e6403431a7349d68af3c1": [
           {"subject": "$binding", "verified": true, "age_sec": 60}
         ]
       }
@@ -71,7 +73,7 @@
         "policy-permit": [
           {"subject": "policy", "verified": true, "age_sec": 60}
         ],
-        "ep:binding:permits": [
+        "ep:binding:permits:f4457486553c090095ca81e334af8c9a9e1cff794a0e6403431a7349d68af3c1": [
           {"subject": "$binding", "verified": true, "age_sec": 1}
         ]
       }
@@ -104,7 +106,7 @@
         "policy-permit": [
           {"subject": "policy", "verified": true, "age_sec": 60}
         ],
-        "ep:binding:permits": [
+        "ep:binding:permits:f4457486553c090095ca81e334af8c9a9e1cff794a0e6403431a7349d68af3c1": [
           {"subject": "$binding", "verified": true, "age_sec": 60}
         ]
       }
@@ -123,7 +125,7 @@
     "cases": [
       {
         "id": "EMI-CAID-001",
-        "name": "same tool+args, extra occurrence_id",
+        "name": "CLC projection: extra non-material occurrence_id",
         "observed": {
           "tool": "payments.transfer",
           "args": {"amount": 3000, "currency": "CNY"},
@@ -133,7 +135,7 @@
       },
       {
         "id": "EMI-CAID-002",
-        "name": "args amount changed",
+        "name": "CLC projection: material args amount changed",
         "observed": {
           "tool": "payments.transfer",
           "args": {"amount": 3001, "currency": "CNY"}

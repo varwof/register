@@ -112,8 +112,7 @@ func TestProjectNativeRequirement(t *testing.T) {
 	}
 }
 
-func TestProjectAECSurfacesUnknownMembersAndPinsClock(t *testing.T) {
-	now := time.Date(2026, 10, 22, 1, 0, 0, 0, time.UTC)
+func TestProjectAECRejectsUnknownMembers(t *testing.T) {
 	doc := []byte(`{
 		"@version":"EP-AEC-REQUIREMENT-v1",
 		"requirement_id":"aec@1",
@@ -122,37 +121,7 @@ func TestProjectAECSurfacesUnknownMembersAndPinsClock(t *testing.T) {
 		"role_constraints":[{"type":"distinct-subject-quorum","component_type":"carrier","threshold":2,"extra":1}],
 		"required_bindings":[{"from_type":"a","relation":"issued","to_type":"b","foo":"bar"}]
 	}`)
-	rep, err := projection.Project(doc, projection.Options{Now: now})
-	if err != nil {
-		t.Fatalf("project AEC: %v", err)
-	}
-	wantResiduals := []string{
-		`unknown member "authorized": not carried`,
-		`role_constraints[0].extra: unknown member, not carried`,
-		`required_bindings[0].foo: unknown member, not carried`,
-	}
-	for _, want := range wantResiduals {
-		found := false
-		for _, got := range rep.Residuals {
-			if got == want {
-				found = true
-				break
-			}
-		}
-		if !found {
-			t.Errorf("missing residual %q in %v", want, rep.Residuals)
-		}
-	}
-	if rep.Meta["mapped_at_utc"] != now.Format(time.RFC3339) {
-		t.Errorf("mapped_at_utc = %q, want %q", rep.Meta["mapped_at_utc"], now.Format(time.RFC3339))
-	}
-	again, err := projection.Project(doc, projection.Options{Now: now})
-	if err != nil {
-		t.Fatal(err)
-	}
-	for k, v := range rep.Meta {
-		if again.Meta[k] != v {
-			t.Errorf("meta %q changed: %q -> %q", k, v, again.Meta[k])
-		}
+	if _, err := projection.Project(doc, projection.Options{}); err == nil {
+		t.Fatal("projection accepted unknown AEC members")
 	}
 }

@@ -4,17 +4,21 @@
 package projection
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
+	"github.com/varwof/register/internal/jsonstrict"
 	"github.com/varwof/register/semantics"
 )
 
-// aecRequirement mirrors the EP-AEC-REQUIREMENT-v1 example in AEC §4.  Only
-// the members this projection understands are decoded; everything else is
-// reported as a residual by name, never silently dropped.
+// aecRequirement mirrors the fields of EP-AEC-REQUIREMENT-v1 in AEC §4.
+// Unknown semantic members are rejected by Project rather than silently
+// dropped; carrier obligations that CLC cannot evaluate are returned as
+// RequiredNativeChecks.
 type aecRequirement struct {
 	Version         string         `json:"@version"`
 	RequirementID   string         `json:"requirement_id"`
@@ -53,6 +57,9 @@ type emiliaAEC struct{}
 func (e *emiliaAEC) ID() string { return "emilia/ep-aec-requirement-v1" }
 
 func (e *emiliaAEC) Match(raw []byte) bool {
+	if err := jsonstrict.Check(raw); err != nil {
+		return false
+	}
 	var m map[string]any
 	if json.Unmarshal(raw, &m) != nil {
 		return false
@@ -62,6 +69,9 @@ func (e *emiliaAEC) Match(raw []byte) bool {
 }
 
 func (e *emiliaAEC) Project(raw []byte, ctx Context) (ProjectedView, error) {
+	if err := jsonstrict.Check(raw); err != nil {
+		return ProjectedView{}, fmt.Errorf("invalid AEC JSON: %w", err)
+	}
 	var generic map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &generic); err != nil {
 		return ProjectedView{}, err
@@ -78,8 +88,11 @@ func (e *emiliaAEC) Project(raw []byte, ctx Context) (ProjectedView, error) {
 		Expression:    a.Expression,
 	}
 	var residual []string
-	residual = append(residual, unknownAECMembers(generic)...)
-	residual = append(residual, unknownNestedAECMembers(generic)...)
+	unknown := append(unknownAECMembers(generic), unknownNestedAECMembers(generic)...)
+	if len(unknown) != 0 {
+		return ProjectedView{}, fmt.Errorf("unsupported AEC content: %s", strings.Join(unknown, "; "))
+	}
+	var nativeChecks []string
 
 	roles := make([]string, 0, len(a.FreshnessSec))
 	for r := range a.FreshnessSec {
@@ -87,45 +100,56 @@ func (e *emiliaAEC) Project(raw []byte, ctx Context) (ProjectedView, error) {
 	}
 	sort.Strings(roles)
 	for _, r := range roles {
+		role, err := pinnedRole(ctx.RoleMap, r)
+		if err != nil {
+			return ProjectedView{}, err
+		}
 		out.Constraints = append(out.Constraints, clcConstraint{
-			Role:       r,
+			Role:       role,
 			Constraint: fmt.Sprintf("varwof/evidence-v1:freshness:sec:%d", a.FreshnessSec[r]),
 		})
 	}
 
 	for _, rc := range a.RoleConstraints {
 		if rc.Type != "distinct-subject-quorum" {
-			residual = append(residual, "role_constraint "+rc.Type+": not expressible")
-			continue
+			return ProjectedView{}, fmt.Errorf("unsupported AEC role constraint %q", rc.Type)
 		}
-		role, mapped := bridgeRole(ctx.RoleMap, rc.ComponentType)
-		if rc.ComponentType != "" && !mapped {
-			residual = append(residual,
-				fmt.Sprintf("role_constraint component_type %q: no pinned role mapping, kept verbatim", rc.ComponentType))
+		role, err := pinnedRole(ctx.RoleMap, rc.ComponentType)
+		if err != nil {
+			return ProjectedView{}, err
 		}
-		if role == "" {
-			role = rc.ComponentType
-		}
-		if role == "" {
-			residual = append(residual, "role_constraint distinct-subject-quorum: no component_type, dropped")
-			continue
+		if rc.SubjectSource != "native-verifier" {
+			return ProjectedView{}, fmt.Errorf(
+				"AEC role constraint subject_id_source must be native-verifier, got %q", rc.SubjectSource)
 		}
 		out.Constraints = append(out.Constraints, clcConstraint{
 			Role:       role,
 			Constraint: fmt.Sprintf("varwof/evidence-v1:quorum:distinct:%d", rc.Threshold),
 		})
-		if rc.SubjectSource != "" {
-			residual = append(residual, "subject_id_source="+rc.SubjectSource+": carrier-owned")
-		}
 	}
 	for _, r := range a.StatusRequired {
-		residual = append(residual, "status_required["+r+"]: carrier-owned, no CLC constraint")
+		if r == "" {
+			return ProjectedView{}, fmt.Errorf("AEC status_required contains an empty role")
+		}
+		nativeChecks = append(nativeChecks, "status_required:"+r)
 	}
+	expressionParts := []string{"(" + a.Expression + ")"}
+	seenBindings := make(map[string]bool, len(a.RequiredBindings))
 	for _, b := range a.RequiredBindings {
+		role, err := BindingRoleName(b.FromType, b.Relation, b.ToType)
+		if err != nil {
+			return ProjectedView{}, err
+		}
+		if !seenBindings[role] {
+			expressionParts = append(expressionParts, role)
+			seenBindings[role] = true
+		}
+		nativeChecks = append(nativeChecks, "required_binding:"+b.FromType+":"+b.Relation+":"+b.ToType)
 		residual = append(residual, fmt.Sprintf(
-			"required_binding %s -%s-> %s: a relation between facts is not expressible",
-			b.FromType, b.Relation, b.ToType))
+			"required_binding %s -%s-> %s: native verifier must emit derived role %s",
+			b.FromType, b.Relation, b.ToType, role))
 	}
+	out.Expression = strings.Join(expressionParts, " AND ")
 
 	reqBytes, err := json.Marshal(out)
 	if err != nil {
@@ -156,24 +180,44 @@ func (e *emiliaAEC) Project(raw []byte, ctx Context) (ProjectedView, error) {
 	}
 
 	return ProjectedView{
-		Requirement: &req,
-		Facts:       []semantics.EvidenceFact{},
-		Residuals:   residual,
-		Meta:        meta,
+		Requirement:          &req,
+		Facts:                []semantics.EvidenceFact{},
+		Residuals:            residual,
+		RequiredNativeChecks: nativeChecks,
+		Meta:                 meta,
 	}, nil
 }
 
-// bridgeRole applies a pinned role mapping.  The second result reports whether
-// the identifier was actually bridged (an identity entry still counts: the
-// relying party pinned that name).
-func bridgeRole(roleMap map[string]string, foreign string) (string, bool) {
+// pinnedRole resolves an AEC role through the relying-party-pinned RoleMap.
+// Identity mappings are explicit; an absent mapping is never guessed.
+func pinnedRole(roleMap map[string]string, foreign string) (string, error) {
 	if foreign == "" {
-		return "", false
+		return "", fmt.Errorf("AEC role identifier is empty")
 	}
-	if mapped, ok := roleMap[foreign]; ok && mapped != "" {
-		return mapped, true
+	mapped, ok := roleMap[foreign]
+	if !ok || mapped == "" {
+		return "", fmt.Errorf("AEC role %q has no pinned CLC role mapping", foreign)
 	}
-	return foreign, false
+	return mapped, nil
+}
+
+// BindingRoleName returns the deterministic CLC role representing one AEC
+// required_bindings triple.  The digest makes the name collision-free even when
+// the same relation name is used with different source and target roles.
+func BindingRoleName(fromType, relation, toType string) (string, error) {
+	if fromType == "" || relation == "" || toType == "" {
+		return "", fmt.Errorf("AEC required_bindings needs non-empty from_type, relation and to_type")
+	}
+	canonical, err := semantics.CanonicalJSON(map[string]string{
+		"from_type": fromType,
+		"relation":  relation,
+		"to_type":   toType,
+	})
+	if err != nil {
+		return "", fmt.Errorf("canonicalize AEC required_bindings tuple: %w", err)
+	}
+	sum := sha256.Sum256(canonical)
+	return fmt.Sprintf("ep:binding:%s:%x", relation, sum[:]), nil
 }
 
 var aecTopLevelMembers = map[string]bool{

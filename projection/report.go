@@ -43,8 +43,14 @@ type Report struct {
 	// Residuals lists what the projection could not carry onto a CLC axis.
 	// Empty is not the goal: an honest list is more useful than a silent drop.
 	Residuals []string `json:"residuals,omitempty"`
+	// RequiredNativeChecks lists obligations the native verifier or effect
+	// boundary must discharge.  They are not evidence facts and cannot make a
+	// CLC requirement satisfied by themselves.
+	RequiredNativeChecks []string `json:"requiredNativeChecks,omitempty"`
 	// Satisfaction is the CLC verdict over the projected view.  It is nil when
-	// no requirement was available to evaluate.
+	// no requirement was available to evaluate.  It does not assert that the
+	// RequiredNativeChecks succeeded; callers must discharge those checks before
+	// treating the overall native evaluation as complete.
 	Satisfaction *semantics.RequirementResult `json:"satisfaction,omitempty"`
 }
 
@@ -83,12 +89,13 @@ func Project(raw []byte, opts Options) (*Report, error) {
 		return nil, fmt.Errorf("projection: %s: %w", p.ID(), err)
 	}
 	rep := &Report{
-		ProjectorID:  p.ID(),
-		SourceFormat: view.Meta["source_format"],
-		Meta:         view.Meta,
-		Requirement:  view.Requirement,
-		Facts:        view.Facts,
-		Residuals:    view.Residuals,
+		ProjectorID:          p.ID(),
+		SourceFormat:         view.Meta["source_format"],
+		Meta:                 view.Meta,
+		Requirement:          view.Requirement,
+		Facts:                view.Facts,
+		Residuals:            view.Residuals,
+		RequiredNativeChecks: view.RequiredNativeChecks,
 	}
 	if rep.Requirement != nil && opts.Facts != nil {
 		sat, err := semantics.EvaluateRequirement(*rep.Requirement, opts.Facts, semantics.EvidenceContext{Now: now})
