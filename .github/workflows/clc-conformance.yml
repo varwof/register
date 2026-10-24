@@ -19,8 +19,10 @@ jobs:
         with:
           go-version: "1.26"
 
-      - name: Fetch CLC-v1 vectors (capability repo)
-        run: git clone --depth 1 https://github.com/varwof/capability.git ../capability
+      - name: Fetch CLC vectors and cross-language dependencies
+        run: |
+          git clone --depth 1 https://github.com/varwof/capability.git ../capability
+          git clone --depth 1 https://github.com/varwof/aic-capability-demo.git ../aic-capability-demo
 
       - name: gofmt
         run: test -z "$(gofmt -l .)"
@@ -29,6 +31,9 @@ jobs:
         run: go vet ./...
 
       - name: go test
+        env:
+          CLC_PY_DIR: ${{ github.workspace }}/../aic-capability-demo
+          CLC_TS_DIR: ${{ github.workspace }}/../aic-capability-demo/ts
         run: go test ./...
 
       - name: Extension canonical parity fixture (Go)
