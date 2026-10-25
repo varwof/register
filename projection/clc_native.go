@@ -31,7 +31,15 @@ func (c *clcNative) Match(raw []byte) bool {
 }
 
 func (c *clcNative) Project(raw []byte, ctx Context) (ProjectedView, error) {
+	sourceDigest, err := sourceRequirementDigest(raw)
+	if err != nil {
+		return ProjectedView{}, err
+	}
 	req, err := semantics.ParseRequirement(raw)
+	if err != nil {
+		return ProjectedView{}, err
+	}
+	projectedDigest, err := req.Digest()
 	if err != nil {
 		return ProjectedView{}, err
 	}
@@ -44,8 +52,10 @@ func (c *clcNative) Project(raw []byte, ctx Context) (ProjectedView, error) {
 		meta["project_ctx_now_utc"] = ctx.Now.UTC().Format(time.RFC3339)
 	}
 	return ProjectedView{
-		Requirement: &req,
-		Facts:       []semantics.EvidenceFact{},
+		Requirement:                &req,
+		SourceRequirementDigest:    &sourceDigest,
+		ProjectedRequirementDigest: &projectedDigest,
+		Facts:                      []semantics.EvidenceFact{},
 		// Nothing to carry: the document was already in the target shape.  An
 		// empty residual list here means "no loss", not "not examined".
 		Residuals: nil,

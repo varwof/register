@@ -18,6 +18,7 @@ package projection
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/varwof/register/semantics"
@@ -37,6 +38,18 @@ type Report struct {
 	Meta map[string]string `json:"meta,omitempty"`
 	// Requirement is the projected CLC-REQUIREMENT-v1 view.
 	Requirement *semantics.Requirement `json:"requirement,omitempty"`
+	// SourceRequirementDigest is the SHA-256 over the JCS encoding of the
+	// complete source requirement as received, before projection.  It keeps the
+	// original relying-party bar identifiable even after rewriting.
+	SourceRequirementDigest *semantics.Digest `json:"sourceRequirementDigest,omitempty"`
+	// ProjectedRequirementDigest is the CLC requirement digest over the final
+	// projected CLC-REQUIREMENT-v1 object, including the rewritten expression.
+	ProjectedRequirementDigest *semantics.Digest `json:"projectedRequirementDigest,omitempty"`
+	// UnavailableNativeInputs records native inputs that produced no eligible
+	// Fact.  It is report evidence, not an alternative verdict: a missing input
+	// never becomes "allow_unresolved", and remains visible when another OR
+	// branch satisfies the requirement.
+	UnavailableNativeInputs []NativeUnavailability `json:"unavailableNativeInputs,omitempty"`
 	// Facts are the projected evidence facts (often empty: a requirement
 	// object carries no facts of its own).
 	Facts []semantics.EvidenceFact `json:"facts,omitempty"`
@@ -65,14 +78,29 @@ type Options struct {
 	// residual records the missing bridge.
 	RoleMap map[string]string
 	// Facts are the natively verified facts the projected requirement is
-	// evaluated over.  Passing nil skips evaluation.
+	// evaluated over.  Passing nil skips evaluation unless
+	// UnavailableNativeInputs is non-empty, which still asks for an evaluation
+	// over the remaining eligible facts.
 	Facts []semantics.EvidenceFact
+	// UnavailableNativeInputs records native inputs the verifier could not
+	// supply or could not verify.  They contribute no facts; the reason is
+	// carried into the report so an eligible sibling OR branch can satisfy the
+	// requirement without hiding the unavailable branch.
+	UnavailableNativeInputs []NativeUnavailability
 }
 
 // Project recognises and projects one external evidence document.  It returns
 // an error only when no projector matches the document or the matched projector
 // rejects it; an unmatched document is never an implicit allow.
 func Project(raw []byte, opts Options) (*Report, error) {
+	for i, unavailable := range opts.UnavailableNativeInputs {
+		if strings.TrimSpace(unavailable.Type) == "" {
+			return nil, fmt.Errorf("projection: unavailable native input %d has no type", i)
+		}
+		if strings.TrimSpace(unavailable.Reason) == "" {
+			return nil, fmt.Errorf("projection: unavailable native input %q has no reason", unavailable.Type)
+		}
+	}
 	p := Find(raw)
 	if p == nil {
 		return nil, fmt.Errorf("projection: no projector matched this document")
@@ -89,15 +117,22 @@ func Project(raw []byte, opts Options) (*Report, error) {
 		return nil, fmt.Errorf("projection: %s: %w", p.ID(), err)
 	}
 	rep := &Report{
-		ProjectorID:          p.ID(),
-		SourceFormat:         view.Meta["source_format"],
-		Meta:                 view.Meta,
-		Requirement:          view.Requirement,
-		Facts:                view.Facts,
-		Residuals:            view.Residuals,
-		RequiredNativeChecks: view.RequiredNativeChecks,
+		ProjectorID:                p.ID(),
+		SourceFormat:               view.Meta["source_format"],
+		Meta:                       view.Meta,
+		Requirement:                view.Requirement,
+		SourceRequirementDigest:    view.SourceRequirementDigest,
+		ProjectedRequirementDigest: view.ProjectedRequirementDigest,
+		UnavailableNativeInputs:    opts.UnavailableNativeInputs,
+		Facts:                      view.Facts,
+		Residuals:                  view.Residuals,
+		RequiredNativeChecks:       view.RequiredNativeChecks,
 	}
-	if rep.Requirement != nil && opts.Facts != nil {
+	// A facts slice (even an empty one) asks for evaluation.  So does a
+	// report of unavailable native inputs: the caller has supplied the native
+	// outcome, so the projected expression must be evaluated over whatever
+	// eligible facts remain.
+	if rep.Requirement != nil && (opts.Facts != nil || len(opts.UnavailableNativeInputs) != 0) {
 		sat, err := semantics.EvaluateRequirement(*rep.Requirement, opts.Facts, semantics.EvidenceContext{Now: now})
 		if err != nil {
 			return nil, fmt.Errorf("projection: evaluate projected requirement: %w", err)

@@ -125,3 +125,31 @@ func TestProjectAECRejectsUnknownMembers(t *testing.T) {
 		t.Fatal("projection accepted unknown AEC members")
 	}
 }
+
+// The native path reports the same dual digests as a foreign projection.  For
+// an already-canonical CLC requirement the source and projected objects agree,
+// and both are independently recomputable.
+func TestProjectNativeRequirementReportsDigests(t *testing.T) {
+	now := time.Date(2026, 10, 25, 1, 0, 0, 0, time.UTC)
+	rep, err := projection.Project([]byte(nativeRequirement), projection.Options{Now: now})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep.SourceRequirementDigest == nil || rep.ProjectedRequirementDigest == nil {
+		t.Fatal("native projection did not report both digests")
+	}
+	wantProjected, err := rep.Requirement.Digest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !rep.ProjectedRequirementDigest.Equal(wantProjected) {
+		t.Fatalf("projected digest = %+v, want %+v", *rep.ProjectedRequirementDigest, wantProjected)
+	}
+	wantSource := recomputeSourceDigest(t, nativeRequirement)
+	if !rep.SourceRequirementDigest.Equal(wantSource) {
+		t.Fatalf("source digest = %+v, want %+v", *rep.SourceRequirementDigest, wantSource)
+	}
+	if len(rep.UnavailableNativeInputs) != 0 {
+		t.Fatalf("native requirement unexpectedly has unavailable inputs: %+v", rep.UnavailableNativeInputs)
+	}
+}

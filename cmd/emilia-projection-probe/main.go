@@ -70,12 +70,23 @@ type bindingMutation struct {
 }
 
 type bindingFixtureDocument struct {
-	Now               string                     `json:"now"`
-	ExpectedSubject   string                     `json:"expected_subject"`
-	BindingRole       string                     `json:"binding_role"`
-	MappedRequirement semantics.Requirement      `json:"mapped_requirement"`
-	Binding           bindingFixture             `json:"binding"`
-	Mutations         map[string]bindingMutation `json:"mutations"`
+	Now                string                `json:"now"`
+	ExpectedSubject    string                `json:"expected_subject"`
+	BindingRole        string                `json:"binding_role"`
+	MappedRequirement  semantics.Requirement `json:"mapped_requirement"`
+	RequirementDigests struct {
+		Source    string `json:"source"`
+		Projected string `json:"projected"`
+	} `json:"requirement_digests"`
+	Binding   bindingFixture             `json:"binding"`
+	Mutations map[string]bindingMutation `json:"mutations"`
+}
+
+func digestLabel(d *semantics.Digest) string {
+	if d == nil {
+		return ""
+	}
+	return d.Alg + ":" + hex.EncodeToString(d.Value)
 }
 
 //go:embed testdata/emilia-binding-fixture-v1.json
@@ -225,6 +236,16 @@ func main() {
 	b, _ := json.MarshalIndent(mapped, "", "  ")
 	fmt.Println("1. EP-AEC-REQUIREMENT-v1 → CLC-REQUIREMENT-v1")
 	fmt.Println(string(b))
+	sourceDigest := digestLabel(projected.SourceRequirementDigest)
+	projectedDigest := digestLabel(projected.ProjectedRequirementDigest)
+	fmt.Printf("   source requirement digest: %s\n", sourceDigest)
+	fmt.Printf("   projected requirement digest: %s\n", projectedDigest)
+	if fixtureDoc.RequirementDigests.Source != "" && sourceDigest != fixtureDoc.RequirementDigests.Source {
+		panic("source requirement digest differs from shared fixture")
+	}
+	if fixtureDoc.RequirementDigests.Projected != "" && projectedDigest != fixtureDoc.RequirementDigests.Projected {
+		panic("projected requirement digest differs from shared fixture")
+	}
 	fmt.Println("   residuals:")
 	for _, r := range residual {
 		fmt.Println("   - " + r)

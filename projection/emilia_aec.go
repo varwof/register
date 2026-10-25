@@ -4,12 +4,14 @@
 package projection
 
 import (
-	"crypto/sha256"
+	"encoding/base64"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/varwof/register/internal/jsonstrict"
 	"github.com/varwof/register/semantics"
@@ -71,6 +73,14 @@ func (e *emiliaAEC) Match(raw []byte) bool {
 func (e *emiliaAEC) Project(raw []byte, ctx Context) (ProjectedView, error) {
 	if err := jsonstrict.Check(raw); err != nil {
 		return ProjectedView{}, fmt.Errorf("invalid AEC JSON: %w", err)
+	}
+	// The source digest is taken over the complete document as received,
+	// before any member is interpreted, dropped or rewritten.  Strict JSON
+	// and JCS make it reproducible by any implementation holding the same
+	// bytes.
+	sourceDigest, err := sourceRequirementDigest(raw)
+	if err != nil {
+		return ProjectedView{}, err
 	}
 	var generic map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &generic); err != nil {
@@ -159,6 +169,10 @@ func (e *emiliaAEC) Project(raw []byte, ctx Context) (ProjectedView, error) {
 	if err != nil {
 		return ProjectedView{}, err
 	}
+	projectedDigest, err := req.Digest()
+	if err != nil {
+		return ProjectedView{}, err
+	}
 
 	meta := map[string]string{
 		"projector_id":  e.ID(),
@@ -180,11 +194,13 @@ func (e *emiliaAEC) Project(raw []byte, ctx Context) (ProjectedView, error) {
 	}
 
 	return ProjectedView{
-		Requirement:          &req,
-		Facts:                []semantics.EvidenceFact{},
-		Residuals:            residual,
-		RequiredNativeChecks: nativeChecks,
-		Meta:                 meta,
+		Requirement:                &req,
+		SourceRequirementDigest:    &sourceDigest,
+		ProjectedRequirementDigest: &projectedDigest,
+		Facts:                      []semantics.EvidenceFact{},
+		Residuals:                  residual,
+		RequiredNativeChecks:       nativeChecks,
+		Meta:                       meta,
 	}, nil
 }
 
@@ -201,23 +217,87 @@ func pinnedRole(roleMap map[string]string, foreign string) (string, error) {
 	return mapped, nil
 }
 
-// BindingRoleName returns the deterministic CLC role representing one AEC
-// required_bindings triple.  The digest makes the name collision-free even when
-// the same relation name is used with different source and target roles.
+// Binding encoding namespace and bounds.  The role is a reversible encoding,
+// not a hash: a hash is collision-resistant but not mathematically injective,
+// and two different triples must never share a role name.
+const (
+	bindingRolePrefix    = "clc:evidence-binding:"
+	maxBindingRoleBytes  = 256
+	maxBindingRolePartSz = maxBindingRoleBytes // guards the uint32 length fields
+)
+
+// BindingRoleName returns the CLC role representing one AEC required_bindings
+// triple.  The complete ordered triple is encoded reversibly:
+//
+//	prefix || base64url_no_padding(uint32be(len(from)) || from ||
+//	                               uint32be(len(relation)) || relation ||
+//	                               uint32be(len(to)) || to)
+//
+// The length prefixes make the encoding injective even though `:` is legal
+// inside a component.  Components must be non-empty, valid UTF-8 and drawn
+// from the AEC identifier character set.  An encoding longer than 256 bytes is
+// rejected, never truncated.
 func BindingRoleName(fromType, relation, toType string) (string, error) {
-	if fromType == "" || relation == "" || toType == "" {
-		return "", fmt.Errorf("AEC required_bindings needs non-empty from_type, relation and to_type")
+	parts := []struct {
+		field string
+		value string
+	}{
+		{"from_type", fromType},
+		{"relation", relation},
+		{"to_type", toType},
 	}
-	canonical, err := semantics.CanonicalJSON(map[string]string{
-		"from_type": fromType,
-		"relation":  relation,
-		"to_type":   toType,
-	})
-	if err != nil {
-		return "", fmt.Errorf("canonicalize AEC required_bindings tuple: %w", err)
+	payloadLen := 0
+	for _, part := range parts {
+		if len(part.value) > maxBindingRolePartSz {
+			return "", fmt.Errorf("AEC required_bindings %s is too long", part.field)
+		}
+		if err := validateAECIdentifier(part.field, part.value); err != nil {
+			return "", err
+		}
+		payloadLen += 4 + len(part.value)
 	}
-	sum := sha256.Sum256(canonical)
-	return fmt.Sprintf("ep:binding:%s:%x", relation, sum[:]), nil
+	payload := make([]byte, 0, payloadLen)
+	for _, part := range parts {
+		payload = binary.BigEndian.AppendUint32(payload, uint32(len(part.value)))
+		payload = append(payload, part.value...)
+	}
+	role := bindingRolePrefix + base64.RawURLEncoding.EncodeToString(payload)
+	if len(role) > maxBindingRoleBytes {
+		return "", fmt.Errorf(
+			"AEC required_bindings %q -%s-> %q encodes to a %d-byte role; limit is %d",
+			fromType, relation, toType, len(role), maxBindingRoleBytes)
+	}
+	return role, nil
+}
+
+// validateAECIdentifier applies the AEC identifier character set,
+// 1*( ALPHA / DIGIT / "." / ":" / "-" / "_" ), and rejects empty or invalid
+// UTF-8 values.  The check is byte-wise because the grammar is ASCII.
+func validateAECIdentifier(field, value string) error {
+	if value == "" {
+		return fmt.Errorf("AEC required_bindings %s is empty", field)
+	}
+	if !utf8.ValidString(value) {
+		return fmt.Errorf("AEC required_bindings %s is not valid UTF-8", field)
+	}
+	for i := 0; i < len(value); i++ {
+		if !isAECIdentifierByte(value[i]) {
+			return fmt.Errorf(
+				"AEC required_bindings %s %q contains a character outside the AEC identifier set",
+				field, value)
+		}
+	}
+	return nil
+}
+
+func isAECIdentifierByte(c byte) bool {
+	switch {
+	case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c >= '0' && c <= '9':
+		return true
+	case c == '.' || c == ':' || c == '-' || c == '_':
+		return true
+	}
+	return false
 }
 
 var aecTopLevelMembers = map[string]bool{

@@ -2,12 +2,12 @@
   "@version": "clc-emilia-binding-fixture-v1",
   "now": "2026-09-13T12:00:00Z",
   "expected_subject": "qhYb5aZfz3Gl_RpCeLk7LyW9POxu1EIC9t0z8Cif48s",
-  "binding_role": "ep:binding:permits:f4457486553c090095ca81e334af8c9a9e1cff794a0e6403431a7349d68af3c1",
+  "binding_role": "clc:evidence-binding:AAAADXBvbGljeS1wZXJtaXQAAAAHcGVybWl0cwAAAAllcC1xdW9ydW0",
   "mapped_requirement": {
     "@version": "CLC-REQUIREMENT-v1",
     "requirement_id": "treasury-wire-evidence@7",
     "purpose": "pre-execution evidence check",
-    "expression": "(ep-quorum AND policy-permit) AND ep:binding:permits:f4457486553c090095ca81e334af8c9a9e1cff794a0e6403431a7349d68af3c1",
+    "expression": "(ep-quorum AND policy-permit) AND clc:evidence-binding:AAAADXBvbGljeS1wZXJtaXQAAAAHcGVybWl0cwAAAAllcC1xdW9ydW0",
     "constraints": [
       {
         "role": "ep-quorum",
@@ -23,6 +23,10 @@
       }
     ]
   },
+  "requirement_digests": {
+    "source": "sha-256:c55a4dae12bfdc8e283d0006ee71cedf5acf04447380b628af490f8f66d3c3fc",
+    "projected": "sha-256:90da16ad7e18f56fa5c4978f8e66a8f6249b7d3084ea93e8765a5ac763b3325c"
+  },
   "evidence_cases": [
     {
       "id": "EMI-AEC-001",
@@ -37,7 +41,7 @@
         "policy-permit": [
           {"subject": "policy", "verified": true, "age_sec": 60}
         ],
-        "ep:binding:permits:f4457486553c090095ca81e334af8c9a9e1cff794a0e6403431a7349d68af3c1": [
+        "clc:evidence-binding:AAAADXBvbGljeS1wZXJtaXQAAAAHcGVybWl0cwAAAAllcC1xdW9ydW0": [
           {"subject": "$binding", "verified": true, "age_sec": 60}
         ]
       }
@@ -55,7 +59,7 @@
         "policy-permit": [
           {"subject": "policy", "verified": true, "age_sec": 60}
         ],
-        "ep:binding:permits:f4457486553c090095ca81e334af8c9a9e1cff794a0e6403431a7349d68af3c1": [
+        "clc:evidence-binding:AAAADXBvbGljeS1wZXJtaXQAAAAHcGVybWl0cwAAAAllcC1xdW9ydW0": [
           {"subject": "$binding", "verified": true, "age_sec": 60}
         ]
       }
@@ -73,7 +77,7 @@
         "policy-permit": [
           {"subject": "policy", "verified": true, "age_sec": 60}
         ],
-        "ep:binding:permits:f4457486553c090095ca81e334af8c9a9e1cff794a0e6403431a7349d68af3c1": [
+        "clc:evidence-binding:AAAADXBvbGljeS1wZXJtaXQAAAAHcGVybWl0cwAAAAllcC1xdW9ydW0": [
           {"subject": "$binding", "verified": true, "age_sec": 1}
         ]
       }
@@ -106,7 +110,7 @@
         "policy-permit": [
           {"subject": "policy", "verified": true, "age_sec": 60}
         ],
-        "ep:binding:permits:f4457486553c090095ca81e334af8c9a9e1cff794a0e6403431a7349d68af3c1": [
+        "clc:evidence-binding:AAAADXBvbGljeS1wZXJtaXQAAAAHcGVybWl0cwAAAAllcC1xdW9ydW0": [
           {"subject": "$binding", "verified": true, "age_sec": 60}
         ]
       }
