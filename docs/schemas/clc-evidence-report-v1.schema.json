@@ -1,0 +1,606 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://varwof.com/schemas/clc-evidence-report-v1.schema.json",
+  "title": "CLC Evidence Projection Report v1",
+  "description": "Report-layer schema for a CLC evidence projection. CLC core objects (requirement, satisfaction) are referenced by shape only; the CLC decision rules remain owned by the CLC specification.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "assurance",
+    "@version",
+    "projectorId",
+    "nativeChecksComplete"
+  ],
+  "properties": {
+    "@version": {
+      "const": "CLC-EVIDENCE-REPORT-v1"
+    },
+    "assurance": {
+      "enum": [
+        "E1",
+        "E2",
+        "E3"
+      ]
+    },
+    "projectorId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "profile": {
+      "$ref": "#/$defs/profile"
+    },
+    "sourceFormat": {
+      "type": "string"
+    },
+    "meta": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "requirement": {
+      "type": "object"
+    },
+    "sourceRequirementDigest": {
+      "$ref": "#/$defs/semanticsDigest"
+    },
+    "projectedRequirementDigest": {
+      "$ref": "#/$defs/semanticsDigest"
+    },
+    "nativeCheckResults": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/nativeCheckResult"
+      }
+    },
+    "nativeCheckAssessment": {
+      "$ref": "#/$defs/nativeCheckAssessment"
+    },
+    "nativeChecksComplete": {
+      "type": "boolean"
+    },
+    "observation": {
+      "$ref": "#/$defs/observation"
+    },
+    "evidenceRecords": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/evidenceRecord"
+      }
+    },
+    "facts": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/fact"
+      }
+    },
+    "residuals": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "requiredNativeChecks": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "satisfaction": {
+      "type": "object"
+    },
+    "verifier": {
+      "$ref": "#/$defs/verifier"
+    },
+    "appraisalTime": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "derivations": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/derivation"
+      }
+    },
+    "requiredCheckIds": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "$defs": {
+    "digest": {
+      "type": "string",
+      "pattern": "^sha-256:[0-9a-f]{64}$",
+      "description": "Canonical typed digest: sha-256 followed by 64 lowercase hex characters."
+    },
+    "semanticsDigest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "alg",
+        "value"
+      ],
+      "properties": {
+        "alg": {
+          "type": "string",
+          "const": "sha-256"
+        },
+        "value": {
+          "type": "string",
+          "contentEncoding": "base64"
+        }
+      }
+    },
+    "outcome": {
+      "enum": [
+        "success",
+        "failed",
+        "unavailable",
+        "not_applicable"
+      ]
+    },
+    "freshnessVerdict": {
+      "enum": [
+        "fresh",
+        "cached",
+        "stale"
+      ]
+    },
+    "freshnessDecision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "verdict"
+      ],
+      "properties": {
+        "verdict": {
+          "$ref": "#/$defs/freshnessVerdict"
+        },
+        "checkedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "validUntil": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "snapshotGeneration": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "nativeCheckResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "checkId",
+        "componentType",
+        "evidenceDigest",
+        "outcome",
+        "verifier",
+        "verifierProfileDigest",
+        "verificationTime"
+      ],
+      "properties": {
+        "checkId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "componentType": {
+          "type": "string",
+          "minLength": 1
+        },
+        "evidenceDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "outcome": {
+          "$ref": "#/$defs/outcome"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "verifier": {
+          "type": "string",
+          "minLength": 1
+        },
+        "verifierProfileDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "trustSnapshotDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "statusSnapshotDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "verificationTime": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "freshnessDecision": {
+          "$ref": "#/$defs/freshnessDecision"
+        },
+        "replayDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "statusSnapshotSource": {
+          "type": "string",
+          "minLength": 1
+        },
+        "statusSnapshotGeneration": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "observation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "nativeActionDigest": {
+          "type": "string"
+        },
+        "clcActionId": {
+          "type": "string"
+        },
+        "actionType": {
+          "type": "string"
+        },
+        "materialFields": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "materialProfileId": {
+          "type": "string"
+        },
+        "mappingProfileDigest": {
+          "$ref": "#/$defs/digest"
+        }
+      }
+    },
+    "fact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "Type",
+        "Subject",
+        "IssuedAt",
+        "Verified"
+      ],
+      "properties": {
+        "Type": {
+          "type": "string"
+        },
+        "Subject": {
+          "type": "string"
+        },
+        "IssuedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "Verified": {
+          "type": "boolean"
+        }
+      }
+    },
+    "evidenceRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "artifactDigest"
+      ],
+      "properties": {
+        "artifactDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "nativeRecordDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "observationId": {
+          "type": "string"
+        },
+        "fact": {
+          "$ref": "#/$defs/fact"
+        },
+        "nativeCheckIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "relationTupleDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "factIndex": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "expectation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "checkId",
+        "componentType",
+        "evidenceDigest"
+      ],
+      "properties": {
+        "checkId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "componentType": {
+          "type": "string",
+          "minLength": 1
+        },
+        "evidenceDigest": {
+          "$ref": "#/$defs/digest"
+        }
+      }
+    },
+    "conflict": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "checkId",
+        "componentType",
+        "outcomes"
+      ],
+      "properties": {
+        "checkId": {
+          "type": "string"
+        },
+        "componentType": {
+          "type": "string"
+        },
+        "evidenceDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "outcomes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/outcome"
+          }
+        }
+      }
+    },
+    "nativeCheckAssessment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "complete"
+      ],
+      "properties": {
+        "complete": {
+          "type": "boolean"
+        },
+        "missingExpectations": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/expectation"
+          }
+        },
+        "unexpectedResults": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/nativeCheckResult"
+          }
+        },
+        "conflictingResults": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/conflict"
+          }
+        }
+      }
+    },
+    "profile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "statusModel"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "statusModel": {
+          "enum": [
+            "none",
+            "required"
+          ]
+        },
+        "requiredChecks": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "expectations": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/expectation"
+          }
+        },
+        "notApplicableAuthority": {
+          "$ref": "#/$defs/digest"
+        },
+        "actionMappingDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "profileDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "reasonNamespace": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9.-]*$"
+        },
+        "reasonRegistryDigest": {
+          "$ref": "#/$defs/digest"
+        }
+      }
+    },
+    "verifier": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "principal",
+        "verifierProfileDigest"
+      ],
+      "properties": {
+        "principal": {
+          "type": "string",
+          "minLength": 1
+        },
+        "verifierProfileDigest": {
+          "$ref": "#/$defs/digest"
+        }
+      }
+    },
+    "replayEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "@version",
+        "checkId",
+        "componentType",
+        "evidenceDigest",
+        "outcome",
+        "verifier",
+        "verifierProfileDigest"
+      ],
+      "properties": {
+        "@version": {
+          "const": "CLC-EVIDENCE-REPLAY-v1"
+        },
+        "checkId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "componentType": {
+          "type": "string",
+          "minLength": 1
+        },
+        "evidenceDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "outcome": {
+          "$ref": "#/$defs/outcome"
+        },
+        "verifier": {
+          "type": "string",
+          "minLength": 1
+        },
+        "verifierProfileDigest": {
+          "$ref": "#/$defs/digest"
+        }
+      }
+    },
+    "derivation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "carrierId",
+        "artifactDigest",
+        "verifierProfileDigest",
+        "factIndex",
+        "factDigest"
+      ],
+      "properties": {
+        "carrierId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "artifactDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "verifierProfileDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "mappingProfileDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "factIndex": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "factDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "nativeCheckIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "attestation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "digest",
+        "quote"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "minLength": 1
+        },
+        "digest": {
+          "$ref": "#/$defs/digest"
+        },
+        "quote": {
+          "type": "string"
+        }
+      }
+    },
+    "timestampAssertion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "digest",
+        "time",
+        "token"
+      ],
+      "properties": {
+        "digest": {
+          "$ref": "#/$defs/digest"
+        },
+        "time": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "token": {
+          "type": "string"
+        }
+      }
+    },
+    "signedReport": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "envelope"
+      ],
+      "properties": {
+        "envelope": {
+          "type": "object"
+        },
+        "timestamp": {
+          "$ref": "#/$defs/timestampAssertion"
+        },
+        "attestation": {
+          "$ref": "#/$defs/attestation"
+        }
+      }
+    }
+  }
+}

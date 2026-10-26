@@ -18,7 +18,6 @@ package projection
 
 import (
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/varwof/register/semantics"
@@ -29,8 +28,25 @@ import (
 // facts, the residuals the mapping could not carry, and (when a requirement
 // was supplied or configured) the CLC satisfaction verdict.
 type Report struct {
+	// Version is the report schema revision.  It is part of the signed payload
+	// so a consumer can refuse an unknown revision instead of guessing.
+	Version string `json:"@version"`
+	// Assurance is the evidence level the verifier claims (E1/E2/E3).
+	Assurance AssuranceLevel `json:"assurance"`
 	// ProjectorID names the mapping that recognised the document.
 	ProjectorID string `json:"projectorId"`
+	// Profile is the relying-party declaration this report is evaluated
+	// against.  It is embedded so the report is self-describing and can be
+	// signed as one object.
+	Profile *Profile `json:"profile,omitempty"`
+	// Verifier is the identity the report claims to have been produced by.
+	// A signed report binds its signer certificate to this identity, so a
+	// signature cannot be detached from the verifier it is meant to name.
+	Verifier *VerifierIdentity `json:"verifier,omitempty"`
+	// AppraisalTime is the instant the projection evaluated freshness at.  A
+	// verifier recomputes the satisfaction at this instant, not at "now", so a
+	// later verification cannot silently change a freshness decision.
+	AppraisalTime *time.Time `json:"appraisalTime,omitempty"`
 	// SourceFormat is the foreign format the document declared.
 	SourceFormat string `json:"sourceFormat,omitempty"`
 	// Meta is the projector's provenance (source format, role bridges, mapping
@@ -45,11 +61,30 @@ type Report struct {
 	// ProjectedRequirementDigest is the CLC requirement digest over the final
 	// projected CLC-REQUIREMENT-v1 object, including the rewritten expression.
 	ProjectedRequirementDigest *semantics.Digest `json:"projectedRequirementDigest,omitempty"`
-	// UnavailableNativeInputs records native inputs that produced no eligible
-	// Fact.  It is report evidence, not an alternative verdict: a missing input
-	// never becomes "allow_unresolved", and remains visible when another OR
-	// branch satisfies the requirement.
-	UnavailableNativeInputs []NativeUnavailability `json:"unavailableNativeInputs,omitempty"`
+	// NativeCheckResults records an explicit result for every required native
+	// status check, including successful ones.  RequiredNativeChecks says what
+	// should run; this list says what did run and what it found.  An empty
+	// result list establishes nothing.
+	NativeCheckResults []NativeCheckResult `json:"nativeCheckResults,omitempty"`
+	// NativeCheckAssessment compares the profile's declared expectation
+	// inventory with the reported results.  It is present only when the caller
+	// supplied expectations.
+	NativeCheckAssessment *NativeCheckAssessment `json:"nativeCheckAssessment,omitempty"`
+	// NativeChecksComplete is report metadata, not a CLC verdict.  It is true
+	// only when every check required by status_required has an explicit result
+	// attributable to the required component and, when an expectation inventory
+	// was supplied, that inventory is fully reported.  Satisfaction is never
+	// final native validation while this is false.
+	NativeChecksComplete bool `json:"nativeChecksComplete"`
+	// Observation is the action binding the profile established natively and,
+	// when pinned, the CLC ActionId it maps to.
+	Observation *ProjectedObservation `json:"observation,omitempty"`
+	// EvidenceRecords is the artifact → Fact lineage the profile reported.
+	EvidenceRecords []ProjectedEvidenceRecord `json:"evidenceRecords,omitempty"`
+	// Derivations binds each Fact to the artifact and verifier/profile that
+	// produced it.  It is tamper-evident lineage, not a proof of the carrier's
+	// semantics.
+	Derivations []Derivation `json:"derivations,omitempty"`
 	// Facts are the projected evidence facts (often empty: a requirement
 	// object carries no facts of its own).
 	Facts []semantics.EvidenceFact `json:"facts,omitempty"`
@@ -60,10 +95,14 @@ type Report struct {
 	// boundary must discharge.  They are not evidence facts and cannot make a
 	// CLC requirement satisfied by themselves.
 	RequiredNativeChecks []string `json:"requiredNativeChecks,omitempty"`
+	// RequiredCheckIDs are the check ids that must have at least one explicit
+	// result.  They are plain identifiers; no prefix is interpreted.
+	RequiredCheckIDs []string `json:"requiredCheckIds,omitempty"`
 	// Satisfaction is the CLC verdict over the projected view.  It is nil when
-	// no requirement was available to evaluate.  It does not assert that the
-	// RequiredNativeChecks succeeded; callers must discharge those checks before
-	// treating the overall native evaluation as complete.
+	// no requirement was available to evaluate.  It is the evidence-side
+	// result over eligible Facts and does not assert that the required native
+	// status checks ran: when NativeChecksComplete is false, it is not final
+	// native validation.
 	Satisfaction *semantics.RequirementResult `json:"satisfaction,omitempty"`
 }
 
@@ -79,27 +118,26 @@ type Options struct {
 	RoleMap map[string]string
 	// Facts are the natively verified facts the projected requirement is
 	// evaluated over.  Passing nil skips evaluation unless
-	// UnavailableNativeInputs is non-empty, which still asks for an evaluation
-	// over the remaining eligible facts.
+	// NativeCheckResults is non-empty, which still asks for an evaluation over
+	// the remaining eligible facts.
 	Facts []semantics.EvidenceFact
-	// UnavailableNativeInputs records native inputs the verifier could not
-	// supply or could not verify.  They contribute no facts; the reason is
-	// carried into the report so an eligible sibling OR branch can satisfy the
-	// requirement without hiding the unavailable branch.
-	UnavailableNativeInputs []NativeUnavailability
+	// NativeCheckResults are the explicit native status-check results the
+	// profile obtained.  Missing results are never inferred from an empty
+	// result list.
+	NativeCheckResults []NativeCheckResult
+	// NativeCheckExpectations is the profile's expected component inventory.
+	// When supplied, the report includes an assessment and completeness also
+	// requires the inventory to be fully reported.
+	NativeCheckExpectations []NativeCheckExpectation
 }
 
 // Project recognises and projects one external evidence document.  It returns
 // an error only when no projector matches the document or the matched projector
 // rejects it; an unmatched document is never an implicit allow.
 func Project(raw []byte, opts Options) (*Report, error) {
-	for i, unavailable := range opts.UnavailableNativeInputs {
-		if strings.TrimSpace(unavailable.Type) == "" {
-			return nil, fmt.Errorf("projection: unavailable native input %d has no type", i)
-		}
-		if strings.TrimSpace(unavailable.Reason) == "" {
-			return nil, fmt.Errorf("projection: unavailable native input %q has no reason", unavailable.Type)
-		}
+	results, err := normalizeResults(opts.NativeCheckResults)
+	if err != nil {
+		return nil, err
 	}
 	p := Find(raw)
 	if p == nil {
@@ -116,30 +154,72 @@ func Project(raw []byte, opts Options) (*Report, error) {
 	if err != nil {
 		return nil, fmt.Errorf("projection: %s: %w", p.ID(), err)
 	}
-	rep := &Report{
+	return BuildEvidenceReport(EvidenceInputs{
 		ProjectorID:                p.ID(),
 		SourceFormat:               view.Meta["source_format"],
 		Meta:                       view.Meta,
 		Requirement:                view.Requirement,
 		SourceRequirementDigest:    view.SourceRequirementDigest,
 		ProjectedRequirementDigest: view.ProjectedRequirementDigest,
-		UnavailableNativeInputs:    opts.UnavailableNativeInputs,
-		Facts:                      view.Facts,
-		Residuals:                  view.Residuals,
 		RequiredNativeChecks:       view.RequiredNativeChecks,
-	}
-	// A facts slice (even an empty one) asks for evaluation.  So does a
-	// report of unavailable native inputs: the caller has supplied the native
-	// outcome, so the projected expression must be evaluated over whatever
-	// eligible facts remain.
-	if rep.Requirement != nil && (opts.Facts != nil || len(opts.UnavailableNativeInputs) != 0) {
-		sat, err := semantics.EvaluateRequirement(*rep.Requirement, opts.Facts, semantics.EvidenceContext{Now: now})
-		if err != nil {
-			return nil, fmt.Errorf("projection: evaluate projected requirement: %w", err)
+		RequiredCheckIDs:           view.RequiredCheckIDs,
+		NativeCheckExpectations:    opts.NativeCheckExpectations,
+		NativeCheckResults:         results,
+		RoleMap:                    opts.RoleMap,
+		Facts:                      opts.Facts,
+		Residuals:                  view.Residuals,
+		Now:                        now,
+	})
+}
+
+// normalizeResults validates the explicit results and rejects two records for
+// the same component of the same check.
+func normalizeResults(results []NativeCheckResult) ([]NativeCheckResult, error) {
+	out := append([]NativeCheckResult(nil), results...)
+	seen := make(map[string]bool, len(out))
+	for i, result := range out {
+		if err := result.validate(i); err != nil {
+			return nil, fmt.Errorf("projection: %w", err)
 		}
-		rep.Satisfaction = &sat
+		key := resultKey(result)
+		if seen[key] {
+			return nil, fmt.Errorf(
+				"projection: native check %q reports two results for component type %q (%s)",
+				result.CheckID, result.ComponentType, result.EvidenceDigest)
+		}
+		seen[key] = true
 	}
-	return rep, nil
+	return out, nil
+}
+
+// assessCompleteness combines the expectation inventory with the required-check
+// coverage rule.  Both are required when both are declared.
+func assessCompleteness(expected []NativeCheckExpectation, requiredChecks []string, results []NativeCheckResult) (NativeCheckAssessment, bool) {
+	assessment := AssessNativeChecks(expected, results)
+	complete := requiredChecksComplete(requiredChecks, results)
+	if len(expected) > 0 {
+		complete = complete && assessment.Complete
+	}
+	return assessment, complete
+}
+
+// requiredChecksComplete reports whether every required check id has at least
+// one explicit result.  The id is compared literally: no carrier-specific
+// prefix is special-cased.
+func requiredChecksComplete(required []string, results []NativeCheckResult) bool {
+	for _, checkID := range required {
+		covered := false
+		for _, result := range results {
+			if result.CheckID == checkID {
+				covered = true
+				break
+			}
+		}
+		if !covered {
+			return false
+		}
+	}
+	return true
 }
 
 // ProjectAndEvaluate projects a foreign document and evaluates the projected

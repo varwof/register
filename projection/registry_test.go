@@ -149,7 +149,7 @@ func TestProjectNativeRequirementReportsDigests(t *testing.T) {
 	if !rep.SourceRequirementDigest.Equal(wantSource) {
 		t.Fatalf("source digest = %+v, want %+v", *rep.SourceRequirementDigest, wantSource)
 	}
-	if len(rep.UnavailableNativeInputs) != 0 {
-		t.Fatalf("native requirement unexpectedly has unavailable inputs: %+v", rep.UnavailableNativeInputs)
+	if len(rep.NativeCheckResults) != 0 {
+		t.Fatalf("native requirement unexpectedly has native check results: %+v", rep.NativeCheckResults)
 	}
 }
