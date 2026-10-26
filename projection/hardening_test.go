@@ -558,7 +558,7 @@ func TestReportAssuranceRules(t *testing.T) {
 func TestReportVersionRequired(t *testing.T) {
 	now := time.Date(2026, 10, 25, 1, 0, 0, 0, time.UTC)
 	report, _ := consistentProfileReport(t, now)
-	report.Version = "CLC-EVIDENCE-REPORT-v0"
+	report.Version = "VARWOF-EVIDENCE-REPORT-v0"
 	err := projection.ValidateEvidenceReport(report)
 	if err == nil || !strings.Contains(err.Error(), projection.CodeReportShape) {
 		t.Fatalf("unknown version error = %v", err)

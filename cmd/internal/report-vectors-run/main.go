@@ -1,14 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: 2026 Jijie Wei (varwof)
 
-// Command clc-e-vectors-run evaluates the CLC-E report regression vectors.
+// Command report-vectors-run evaluates the internal report-layer regression
+// vectors.
 //
-// These vectors cover the report layer only (validation, completeness,
-// lifecycle and replay). They are data-only: no private keys and no
-// signatures, so signed-report behaviour stays in the projection unit tests.
-// The corpus is regression evidence, not a CLC-E conformance suite.
+// These vectors cover the internal report layer only (validation,
+// completeness, lifecycle and replay). They are data-only: no private keys and
+// no signatures, so signed-report behaviour stays in the projection unit tests.
+// The corpus is internal regression evidence, not a conformance suite.
 //
-// Corpus path: CLC_E_VECTORS, else the first argument.
+// Corpus path: EVIDENCE_REPORT_VECTORS, else the first argument.
 package main
 
 import (
@@ -104,12 +105,12 @@ func evaluate(v vector) (string, string, error) {
 }
 
 func main() {
-	path := os.Getenv("CLC_E_VECTORS")
+	path := os.Getenv("EVIDENCE_REPORT_VECTORS")
 	if path == "" && len(os.Args) > 1 {
 		path = os.Args[1]
 	}
 	if path == "" {
-		fmt.Fprintln(os.Stderr, "usage: clc-e-vectors-run <vectors.json> (or CLC_E_VECTORS)")
+		fmt.Fprintln(os.Stderr, "usage: report-vectors-run <vectors.json> (or EVIDENCE_REPORT_VECTORS)")
 		os.Exit(2)
 	}
 	raw, err := os.ReadFile(path)

@@ -41,9 +41,9 @@ const (
 	CodeReportReplayMismatch   = "report_replay_mismatch"
 )
 
-// ReportVersion is the only report schema revision this implementation emits
-// and accepts.
-const ReportVersion = "CLC-EVIDENCE-REPORT-v1"
+// ReportVersion is the internal report schema revision. It is an
+// implementation detail, not a CLC-E wire format or a published protocol.
+const ReportVersion = "VARWOF-EVIDENCE-REPORT-v1"
 
 // AssuranceLevel names what the report's evidence actually supports.
 type AssuranceLevel string

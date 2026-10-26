@@ -27,6 +27,10 @@ import (
 // document.  It is deliberately a *report*: the projected requirement and
 // facts, the residuals the mapping could not carry, and (when a requirement
 // was supplied or configured) the CLC satisfaction verdict.
+//
+// The report object is an internal, experimental implementation detail. It is
+// not a CLC-E deliverable, not a published protocol, and makes no conformance
+// claim; CLC-E remains the projection/evidence view.
 type Report struct {
 	// Version is the report schema revision.  It is part of the signed payload
 	// so a consumer can refuse an unknown revision instead of guessing.

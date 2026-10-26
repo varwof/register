@@ -25,8 +25,9 @@ import (
 	"github.com/varwof/register/semantics"
 )
 
-// ReportPayloadType is the DSSE payload type a signed evidence report uses.
-const ReportPayloadType = "application/vnd.varwof.clc-evidence-report-v1+json"
+// ReportPayloadType is the DSSE payload type the internal signed report uses.
+// It is an implementation detail, not a CLC-E wire format.
+const ReportPayloadType = "application/vnd.varwof.evidence-report-v1+json"
 
 // reportClockSkew is the tolerated forward error for the appraisal instant.
 const reportClockSkew = 5 * time.Minute

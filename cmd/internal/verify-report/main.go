@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: 2026 Jijie Wei (varwof)
 
-// Command verify-report verifies a signed CLC evidence report against a
-// deployer policy, advances persisted snapshot state, and exits non-zero on any
-// refusal.
+// Command verify-report is an internal test tool. It verifies a signed
+// evidence report against a deployer policy, advances persisted snapshot state,
+// and exits non-zero on any refusal. It is not a CLC-E deliverable.
 package main
 
 import (

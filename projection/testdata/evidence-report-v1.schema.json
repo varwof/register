@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://varwof.com/schemas/clc-evidence-report-v1.schema.json",
-  "title": "CLC Evidence Projection Report v1",
-  "description": "Report-layer schema for a CLC evidence projection. CLC core objects (requirement, satisfaction) are referenced by shape only; the CLC decision rules remain owned by the CLC specification.",
+  "$id": "urn:varwof:internal:evidence-report-v1",
+  "title": "Internal evidence projection report (test fixture)",
+  "description": "Internal test fixture for the reference implementation's experimental report layer. It is not a CLC-E deliverable, not a published protocol, and makes no conformance claim.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -13,7 +13,7 @@
   ],
   "properties": {
     "@version": {
-      "const": "CLC-EVIDENCE-REPORT-v1"
+      "const": "VARWOF-EVIDENCE-REPORT-v1"
     },
     "assurance": {
       "enum": [

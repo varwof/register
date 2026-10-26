@@ -14,12 +14,12 @@ import (
 	"github.com/varwof/register/projection"
 )
 
-// The published schema is documentation-only at runtime (no JSON-Schema
+// The internal test schema is documentation-only at runtime (no JSON-Schema
 // dependency is pulled in), so this test keeps it honest: every JSON member of
 // the report-layer types must appear in the schema, and the schema's required
 // sets must match the fields the validator actually enforces.
 func TestReportSchemaCoversReportLayerTypes(t *testing.T) {
-	raw, err := os.ReadFile("../docs/schemas/clc-evidence-report-v1.schema.json")
+	raw, err := os.ReadFile("testdata/evidence-report-v1.schema.json")
 	if err != nil {
 		t.Fatalf("read schema: %v", err)
 	}
