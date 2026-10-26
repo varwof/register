@@ -1,0 +1,162 @@
+{
+  "@version": "clc-oasnt-approval-fixture-v1",
+  "note": "Synthetic OASNT-shaped evidence, not production JWT bytes. Claims follow draft-thallapelly-oasnt-02 section 5.3; adg follows section 6.2. All timestamps are fixed.",
+  "now": "2026-09-13T12:00:00Z",
+  "token": {
+    "sub": "user:alice@example.org",
+    "type": "payments.transfer",
+    "params": {
+      "amount": "3000",
+      "currency": "CNY"
+    },
+    "iat": 1789300740,
+    "exp": 1789300920,
+    "int": "clean",
+    "jti": "jti-7f3c1d9e",
+    "dsp": "ZitlZ0ptcLWEP3iQrEDrtu7IT7No5dkJTM7OcOyLoTA",
+    "rqf": "xrAsBYMdP0JMg0E2KFyboNqHCvUX81SIzZ5oVLBeB_4",
+    "asl": "aal1"
+  },
+  "presented": {
+    "match": {
+      "type": "payments.transfer",
+      "params": {
+        "amount": "3000",
+        "currency": "CNY"
+      }
+    },
+    "mismatch": {
+      "type": "payments.transfer",
+      "params": {
+        "amount": "3001",
+        "currency": "CNY"
+      }
+    }
+  },
+  "adg": "0MRb5YozGHPT71GiH-DSFLJm1s2G4ZDLfiBE_CD_UzE",
+  "artifact_digest": "sha-256:cb38073f19ffb5b5214f067473eae219a7e4e3520d0c6f25b25bc036f1532cdc",
+  "verifier": "oasnt-native-verifier/1",
+  "verifier_profile_digest": "sha-256:db88595ad8c763593a8e562e46d3224f579a7af2fe999a2d0ead0c0389f00903",
+  "trust_snapshot_digest": "sha-256:ebe4190cf1c4b6d76d55e6a69f27e17bdbb34aa0838becd67a9abfabd42e5f61",
+  "status_snapshot_digest": "sha-256:850470abb61b2d70da9606907186024b9e4698761f9a4e5a350e8b4b36b1e8f7",
+  "profile_digest": "sha-256:9b226499c2b16cd0067cd33ac6b988e7ed924b3aabffaf49b027e525857230d3",
+  "action_mapping": {
+    "material_profile_id": "oasnt/canonical-action-v1",
+    "mapping_profile_id": "oasnt-to-clc/action-mapping-v1",
+    "mapping_profile_digest": "sha-256:ca07b715c739770562484afa1ec7482048eec8a72c51c6fa53f57783d0dff87f",
+    "clc_action_type": "tool.call.1",
+    "clc_material_fields": ["tool", "args"],
+    "clc_tool": "payments.transfer",
+    "clc_args": {
+      "amount": 3000,
+      "currency": "CNY"
+    }
+  },
+  "check_inventory": [
+    {
+      "check_id": "oasnt:token-validity",
+      "component_type": "oasnt:approval-token",
+      "evidence_digest": "sha-256:cb38073f19ffb5b5214f067473eae219a7e4e3520d0c6f25b25bc036f1532cdc"
+    },
+    {
+      "check_id": "oasnt:device-integrity",
+      "component_type": "oasnt:approval-token",
+      "evidence_digest": "sha-256:cb38073f19ffb5b5214f067473eae219a7e4e3520d0c6f25b25bc036f1532cdc"
+    }
+  ],
+  "residuals": [
+    "jti: single-use nonce; consumption belongs to the enforcement point, never reported as evidence success",
+    "dsp: disclosure the human read; CLC has no disclosure axis",
+    "rqf: one concrete request fingerprint; CLC identity is the action, not the request instance",
+    "asl: assurance level; carrier-owned and relying-party-policy-owned",
+    "exp: validity deadline, not an age bound; CLC freshness is age-based",
+    "int is device-asserted, not proven by the token; the report records the asserted result and its gating effect only",
+    "nested parameters: the OASNT canonical action is flat; nested arguments need an explicit mapping"
+  ],
+  "cases": [
+    {
+      "id": "OAS-NCHECK-001",
+      "name": "valid token, int=clean, action match",
+      "results": {
+        "oasnt:token-validity": "success",
+        "oasnt:device-integrity": "success"
+      },
+      "reasons": {},
+      "action_match": true,
+      "want": "validity=success,integrity=success,action=MATCH,complete=true,eligible=true"
+    },
+    {
+      "id": "OAS-NCHECK-002",
+      "name": "int=compromised",
+      "results": {
+        "oasnt:token-validity": "success",
+        "oasnt:device-integrity": "failed"
+      },
+      "reasons": {
+        "oasnt:device-integrity": "oasnt:int-compromised"
+      },
+      "action_match": true,
+      "want": "validity=success,integrity=failed,action=MATCH,complete=true,eligible=false"
+    },
+    {
+      "id": "OAS-NCHECK-003",
+      "name": "int=unknown",
+      "results": {
+        "oasnt:token-validity": "success",
+        "oasnt:device-integrity": "unavailable"
+      },
+      "reasons": {
+        "oasnt:device-integrity": "oasnt:int-unknown"
+      },
+      "action_match": true,
+      "want": "validity=success,integrity=unavailable,action=MATCH,complete=true,eligible=false"
+    },
+    {
+      "id": "OAS-NCHECK-004",
+      "name": "expired token",
+      "results": {
+        "oasnt:token-validity": "failed",
+        "oasnt:device-integrity": "success"
+      },
+      "reasons": {
+        "oasnt:token-validity": "oasnt:token-expired"
+      },
+      "action_match": true,
+      "want": "validity=failed,integrity=success,action=MATCH,complete=true,eligible=false"
+    },
+    {
+      "id": "OAS-NCHECK-005",
+      "name": "enrolled-key lookup unavailable",
+      "results": {
+        "oasnt:token-validity": "unavailable",
+        "oasnt:device-integrity": "success"
+      },
+      "reasons": {
+        "oasnt:token-validity": "oasnt:key-lookup-unavailable"
+      },
+      "action_match": true,
+      "want": "validity=unavailable,integrity=success,action=MATCH,complete=true,eligible=false"
+    },
+    {
+      "id": "OAS-NCHECK-006",
+      "name": "integrity result omitted",
+      "results": {
+        "oasnt:token-validity": "success"
+      },
+      "reasons": {},
+      "action_match": true,
+      "want": "validity=success,integrity=missing,action=MATCH,complete=false,eligible=false"
+    },
+    {
+      "id": "OAS-NCHECK-007",
+      "name": "adg mismatch against the presented action",
+      "results": {
+        "oasnt:token-validity": "success",
+        "oasnt:device-integrity": "success"
+      },
+      "reasons": {},
+      "action_match": false,
+      "want": "validity=success,integrity=success,action=MISMATCH,complete=true,eligible=false"
+    }
+  ]
+}

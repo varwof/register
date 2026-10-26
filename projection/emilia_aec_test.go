@@ -191,6 +191,44 @@ func projectJSON(t *testing.T, rep any) string {
 	return string(raw)
 }
 
+// unavailableOutcomes filters the explicit results down to the unavailable
+// ones, so a test can assert that a reason survived projection.
+func unavailableOutcomes(rep *projection.Report) []projection.NativeCheckResult {
+	var out []projection.NativeCheckResult
+	for _, result := range rep.NativeCheckResults {
+		if result.Outcome == projection.NativeCheckUnavailable {
+			out = append(out, result)
+		}
+	}
+	return out
+}
+
+// nativeResults builds an attributable result set for tests: one explicit
+// record per requested (check, component, outcome).
+func nativeResult(check, component string, outcome projection.NativeCheckOutcome, now time.Time) projection.NativeCheckResult {
+	r := projection.NativeCheckResult{
+		CheckID:               check,
+		ComponentType:         component,
+		EvidenceDigest:        projection.Digest("sha-256:" + strings.Repeat("a", 64)),
+		Outcome:               outcome,
+		Verifier:              "native-verifier/1",
+		VerifierProfileDigest: projection.Digest("sha-256:" + strings.Repeat("b", 64)),
+		TrustSnapshotDigest:   projection.Digest("sha-256:" + strings.Repeat("c", 64)),
+		StatusSnapshotDigest:  projection.Digest("sha-256:" + strings.Repeat("d", 64)),
+		VerificationTime:      now,
+		FreshnessDecision:     &projection.FreshnessDecision{Verdict: projection.FreshnessFresh},
+	}
+	switch outcome {
+	case projection.NativeCheckFailed:
+		r.Reason = "emilia:revoked"
+	case projection.NativeCheckUnavailable:
+		r.Reason = "emilia:unavailable:timeout"
+	case projection.NativeCheckNotApplicable:
+		r.Reason = "emilia:not-applicable:no-status-material"
+	}
+	return r
+}
+
 // An unavailable branch under OR is not a failed requirement: the eligible
 // branch decides, and the unavailable-input reason stays in the report.
 func TestProjectAECORBranchUnavailableStillSatisfied(t *testing.T) {
@@ -199,8 +237,8 @@ func TestProjectAECORBranchUnavailableStillSatisfied(t *testing.T) {
 		Now:     now,
 		RoleMap: identityRoles("a", "b"),
 		Facts:   []semantics.EvidenceFact{verifiedFact("b", "bob", now)},
-		UnavailableNativeInputs: []projection.NativeUnavailability{
-			{Type: "a", Reason: "native-status:unavailable:timeout"},
+		NativeCheckResults: []projection.NativeCheckResult{
+			nativeResult("status_required:a", "a", projection.NativeCheckUnavailable, now),
 		},
 	})
 	if err != nil {
@@ -209,10 +247,10 @@ func TestProjectAECORBranchUnavailableStillSatisfied(t *testing.T) {
 	if got := rep.Satisfaction.Satisfaction().Verdict; got != semantics.SatisfactionSatisfied {
 		t.Fatalf("verdict = %s, want SATISFIED", got)
 	}
-	if len(rep.UnavailableNativeInputs) != 1 ||
-		rep.UnavailableNativeInputs[0].Type != "a" ||
-		rep.UnavailableNativeInputs[0].Reason != "native-status:unavailable:timeout" {
-		t.Fatalf("unavailable reason was dropped: %+v", rep.UnavailableNativeInputs)
+	if got := unavailableOutcomes(rep); len(got) != 1 ||
+		got[0].ComponentType != "a" ||
+		got[0].Reason != "emilia:unavailable:timeout" {
+		t.Fatalf("unavailable reason was dropped: %+v", rep.NativeCheckResults)
 	}
 	if strings.Contains(projectJSON(t, rep), "allow_unresolved") {
 		t.Fatal("native unavailability leaked the authorization-only allow_unresolved verdict")
@@ -236,8 +274,8 @@ func TestProjectAECORDeclaredConstraintFailureStillFails(t *testing.T) {
 		Now:     now,
 		RoleMap: identityRoles("a", "b"),
 		Facts:   []semantics.EvidenceFact{verifiedFact("b", "bob", now)},
-		UnavailableNativeInputs: []projection.NativeUnavailability{
-			{Type: "a", Reason: "native-status:unavailable:timeout"},
+		NativeCheckResults: []projection.NativeCheckResult{
+			nativeResult("status_required:a", "a", projection.NativeCheckUnavailable, now),
 		},
 	})
 	if err != nil {
@@ -271,8 +309,8 @@ func TestProjectAECORRequiredBindingFailureStillFails(t *testing.T) {
 		Now:     now,
 		RoleMap: identityRoles("a", "b"),
 		Facts:   []semantics.EvidenceFact{verifiedFact("b", "bob", now)},
-		UnavailableNativeInputs: []projection.NativeUnavailability{
-			{Type: "a", Reason: "native-status:unavailable:timeout"},
+		NativeCheckResults: []projection.NativeCheckResult{
+			nativeResult("status_required:a", "a", projection.NativeCheckUnavailable, now),
 		},
 	})
 	if err != nil {
@@ -295,9 +333,9 @@ func TestProjectAECORAllBranchesUnavailable(t *testing.T) {
 	rep, err := projection.Project([]byte(emiliaORRequirement), projection.Options{
 		Now:     now,
 		RoleMap: identityRoles("a", "b"),
-		UnavailableNativeInputs: []projection.NativeUnavailability{
-			{Type: "a", Reason: "native-status:unavailable:timeout"},
-			{Type: "b", Reason: "native-status:unavailable:offline"},
+		NativeCheckResults: []projection.NativeCheckResult{
+			nativeResult("status_required:a", "a", projection.NativeCheckUnavailable, now),
+			nativeResult("status_required:b", "b", projection.NativeCheckUnavailable, now),
 		},
 	})
 	if err != nil {
@@ -310,8 +348,8 @@ func TestProjectAECORAllBranchesUnavailable(t *testing.T) {
 	if sat.Reason != semantics.SatisfactionReasonExpressionFalse {
 		t.Fatalf("reason = %q, want %q", sat.Reason, semantics.SatisfactionReasonExpressionFalse)
 	}
-	if len(rep.UnavailableNativeInputs) != 2 {
-		t.Fatalf("unavailable reasons = %+v, want both branches", rep.UnavailableNativeInputs)
+	if got := unavailableOutcomes(rep); len(got) != 2 {
+		t.Fatalf("unavailable reasons = %+v, want both branches", rep.NativeCheckResults)
 	}
 }
 
@@ -544,8 +582,8 @@ func TestProjectAECStatusBoundary(t *testing.T) {
 	unavailable, err := projection.Project([]byte(doc), projection.Options{
 		Now:     now,
 		RoleMap: identityRoles("a"),
-		UnavailableNativeInputs: []projection.NativeUnavailability{
-			{Type: "a", Reason: "native-status:unavailable:offline"},
+		NativeCheckResults: []projection.NativeCheckResult{
+			nativeResult("status_required:a", "a", projection.NativeCheckUnavailable, now),
 		},
 	})
 	if err != nil {
@@ -554,25 +592,355 @@ func TestProjectAECStatusBoundary(t *testing.T) {
 	if got := unavailable.Satisfaction.Satisfaction().Verdict; got != semantics.SatisfactionUnsatisfied {
 		t.Fatalf("verdict without status input = %s, want UNSATISFIED", got)
 	}
-	if len(unavailable.UnavailableNativeInputs) != 1 ||
-		unavailable.UnavailableNativeInputs[0].Reason != "native-status:unavailable:offline" {
-		t.Fatalf("status unavailable reason was dropped: %+v", unavailable.UnavailableNativeInputs)
+	if got := unavailableOutcomes(unavailable); len(got) != 1 ||
+		got[0].Reason != "emilia:unavailable:timeout" {
+		t.Fatalf("status unavailable reason was dropped: %+v", unavailable.NativeCheckResults)
 	}
 }
 
-func TestProjectRejectsMalformedNativeUnavailability(t *testing.T) {
-	for _, unavailable := range []projection.NativeUnavailability{
-		{Reason: "native-status:unavailable"},
-		{Type: "a"},
-		{Type: " ", Reason: "native-status:unavailable"},
-		{Type: "a", Reason: " "},
+func TestProjectRejectsMalformedNativeCheckResults(t *testing.T) {
+	now := time.Date(2026, 10, 25, 1, 0, 0, 0, time.UTC)
+	valid := nativeResult("status_required:a", "a", projection.NativeCheckUnavailable, now)
+	for name, mutate := range map[string]func(*projection.NativeCheckResult){
+		"no check id":        func(r *projection.NativeCheckResult) { r.CheckID = "" },
+		"no component":       func(r *projection.NativeCheckResult) { r.ComponentType = "" },
+		"no evidence digest": func(r *projection.NativeCheckResult) { r.EvidenceDigest = "" },
+		"no verifier":        func(r *projection.NativeCheckResult) { r.Verifier = "" },
+		"no profile digest":  func(r *projection.NativeCheckResult) { r.VerifierProfileDigest = "" },
+		"no verification time": func(r *projection.NativeCheckResult) {
+			r.VerificationTime = time.Time{}
+		},
+		"no reason": func(r *projection.NativeCheckResult) { r.Reason = "" },
 	} {
-		if _, err := projection.Project([]byte(emiliaORRequirement), projection.Options{
-			RoleMap:                 identityRoles("a", "b"),
-			Facts:                   []semantics.EvidenceFact{},
-			UnavailableNativeInputs: []projection.NativeUnavailability{unavailable},
+		t.Run(name, func(t *testing.T) {
+			result := valid
+			mutate(&result)
+			if _, err := projection.Project([]byte(emiliaORRequirement), projection.Options{
+				RoleMap:            identityRoles("a", "b"),
+				Facts:              []semantics.EvidenceFact{},
+				NativeCheckResults: []projection.NativeCheckResult{result},
+			}); err == nil {
+				t.Fatalf("malformed native check result was accepted: %+v", result)
+			}
+		})
+	}
+}
+
+const statusBothRequirement = `{
+  "@version": "EP-AEC-REQUIREMENT-v1",
+  "requirement_id": "status-both@1",
+  "expression": "a OR b",
+  "status_required": ["a", "b"]
+}`
+
+// Every required status check needs an explicit result: four outcomes, all
+// distinct, each accepted as a report record.
+func TestProjectNativeCheckOutcomesAreClosed(t *testing.T) {
+	now := time.Date(2026, 10, 25, 1, 0, 0, 0, time.UTC)
+	for _, outcome := range []projection.NativeCheckOutcome{
+		projection.NativeCheckSuccess,
+		projection.NativeCheckFailed,
+		projection.NativeCheckUnavailable,
+		projection.NativeCheckNotApplicable,
+	} {
+		t.Run(string(outcome), func(t *testing.T) {
+			rep, err := projection.Project([]byte(statusBothRequirement), projection.Options{
+				Now:     now,
+				RoleMap: identityRoles("a", "b"),
+				Facts:   []semantics.EvidenceFact{},
+				NativeCheckResults: []projection.NativeCheckResult{
+					nativeResult("status_required:a", "a", outcome, now),
+					nativeResult("status_required:b", "b", outcome, now),
+				},
+			})
+			if err != nil {
+				t.Fatalf("outcome %q rejected: %v", outcome, err)
+			}
+			if !rep.NativeChecksComplete {
+				t.Fatalf("explicit %q results did not complete the report: %+v", outcome, rep.NativeCheckResults)
+			}
+			if len(rep.NativeCheckResults) != 2 {
+				t.Fatalf("results = %+v, want both components", rep.NativeCheckResults)
+			}
+		})
+	}
+
+	for _, bad := range []projection.NativeCheckOutcome{"", "ok", "SUCCESS", "passed"} {
+		if _, err := projection.Project([]byte(statusBothRequirement), projection.Options{
+			Now:     now,
+			RoleMap: identityRoles("a", "b"),
+			Facts:   []semantics.EvidenceFact{},
+			NativeCheckResults: []projection.NativeCheckResult{
+				{CheckID: "status_required:a", ComponentType: "a", Outcome: bad},
+			},
 		}); err == nil {
-			t.Fatalf("malformed native unavailability was accepted: %+v", unavailable)
+			t.Fatalf("unknown outcome %q was accepted", bad)
 		}
+	}
+}
+
+// Attribution is not optional for an outcome that claims a check ran.
+func TestProjectNativeCheckRequiresAttribution(t *testing.T) {
+	now := time.Date(2026, 10, 25, 1, 0, 0, 0, time.UTC)
+	complete := nativeResult("status_required:a", "a", projection.NativeCheckSuccess, now)
+	cases := map[string]func(*projection.NativeCheckResult){
+		"no check id":            func(r *projection.NativeCheckResult) { r.CheckID = "" },
+		"no component":           func(r *projection.NativeCheckResult) { r.ComponentType = "" },
+		"no evidence digest":     func(r *projection.NativeCheckResult) { r.EvidenceDigest = "" },
+		"no verifier":            func(r *projection.NativeCheckResult) { r.Verifier = "" },
+		"no profile digest":      func(r *projection.NativeCheckResult) { r.VerifierProfileDigest = "" },
+		"no trust snapshot":      func(r *projection.NativeCheckResult) { r.TrustSnapshotDigest = "" },
+		"no status snapshot":     func(r *projection.NativeCheckResult) { r.StatusSnapshotDigest = "" },
+		"no verification time":   func(r *projection.NativeCheckResult) { r.VerificationTime = time.Time{} },
+		"no freshness decision":  func(r *projection.NativeCheckResult) { r.FreshnessDecision = nil },
+		"failure without reason": func(r *projection.NativeCheckResult) { r.Outcome = projection.NativeCheckFailed },
+	}
+	for name, mutate := range cases {
+		t.Run(name, func(t *testing.T) {
+			result := complete
+			mutate(&result)
+			if _, err := projection.Project([]byte(statusBothRequirement), projection.Options{
+				Now:                now,
+				RoleMap:            identityRoles("a", "b"),
+				Facts:              []semantics.EvidenceFact{},
+				NativeCheckResults: []projection.NativeCheckResult{result},
+			}); err == nil {
+				t.Fatalf("malformed native check result was accepted: %+v", result)
+			}
+		})
+	}
+}
+
+// An unavailable or not-applicable decision may occur before a status snapshot
+// exists.  It still identifies the artifact, verifier and time, but the report
+// must not require fabricated snapshot or freshness fields.
+func TestProjectNativeCheckWithoutStatusSnapshot(t *testing.T) {
+	now := time.Date(2026, 10, 25, 1, 0, 0, 0, time.UTC)
+	for _, outcome := range []projection.NativeCheckOutcome{
+		projection.NativeCheckUnavailable,
+		projection.NativeCheckNotApplicable,
+	} {
+		t.Run(string(outcome), func(t *testing.T) {
+			first := nativeResult("status_required:a", "a", outcome, now)
+			second := nativeResult("status_required:b", "b", outcome, now)
+			for _, result := range []*projection.NativeCheckResult{&first, &second} {
+				result.TrustSnapshotDigest = ""
+				result.StatusSnapshotDigest = ""
+				result.FreshnessDecision = nil
+			}
+			rep, err := projection.Project([]byte(statusBothRequirement), projection.Options{
+				Now:                now,
+				RoleMap:            identityRoles("a", "b"),
+				Facts:              []semantics.EvidenceFact{},
+				NativeCheckResults: []projection.NativeCheckResult{first, second},
+			})
+			if err != nil {
+				t.Fatalf("outcome %q without a status snapshot was rejected: %v", outcome, err)
+			}
+			if !rep.NativeChecksComplete {
+				t.Fatal("results without a status snapshot did not complete the report")
+			}
+		})
+	}
+}
+
+// Two records for the same component of the same check are contradictory, not
+// an extra vote.
+func TestProjectNativeCheckRejectsDuplicateComponent(t *testing.T) {
+	now := time.Date(2026, 10, 25, 1, 0, 0, 0, time.UTC)
+	first := nativeResult("status_required:a", "a", projection.NativeCheckSuccess, now)
+	second := nativeResult("status_required:a", "a", projection.NativeCheckFailed, now)
+	if _, err := projection.Project([]byte(statusBothRequirement), projection.Options{
+		Now:                now,
+		RoleMap:            identityRoles("a", "b"),
+		Facts:              []semantics.EvidenceFact{},
+		NativeCheckResults: []projection.NativeCheckResult{first, second},
+	}); err == nil {
+		t.Fatal("two outcomes for one component were accepted")
+	}
+}
+
+// Completeness is per required check and per component; a result for another
+// component does not stand in for the missing one.
+func TestProjectNativeChecksCompleteRequiresEveryRequiredCheck(t *testing.T) {
+	now := time.Date(2026, 10, 25, 1, 0, 0, 0, time.UTC)
+	project := func(results ...projection.NativeCheckResult) *projection.Report {
+		t.Helper()
+		rep, err := projection.Project([]byte(statusBothRequirement), projection.Options{
+			Now:                now,
+			RoleMap:            identityRoles("a", "b"),
+			Facts:              []semantics.EvidenceFact{},
+			NativeCheckResults: results,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return rep
+	}
+
+	if rep := project(nativeResult("status_required:a", "a", projection.NativeCheckSuccess, now)); rep.NativeChecksComplete {
+		t.Fatal("missing b result still marked native checks complete")
+	}
+	if rep := project(
+		nativeResult("status_required:a", "a", projection.NativeCheckSuccess, now),
+		nativeResult("status_required:b", "b", projection.NativeCheckSuccess, now),
+	); !rep.NativeChecksComplete {
+		t.Fatal("explicit results for every required check were not complete")
+	}
+}
+
+// A cached status snapshot is acceptable when the record states the profile's
+// freshness decision; CLC neither fetches nor refreshes status.
+func TestProjectAcceptsCachedStatusSnapshotWithFreshnessDecision(t *testing.T) {
+	now := time.Date(2026, 10, 25, 1, 0, 0, 0, time.UTC)
+	result := nativeResult("status_required:a", "a", projection.NativeCheckSuccess, now)
+	checkedAt := time.Date(2026, 9, 13, 12, 0, 0, 0, time.UTC)
+	validUntil := checkedAt.Add(time.Minute)
+	result.FreshnessDecision = &projection.FreshnessDecision{
+		Verdict:    projection.FreshnessCached,
+		CheckedAt:  &checkedAt,
+		ValidUntil: &validUntil,
+	}
+	result.ReplayDigest = projection.Digest("sha-256:" + strings.Repeat("e", 64))
+	rep, err := projection.Project([]byte(statusBothRequirement), projection.Options{
+		Now:     now,
+		RoleMap: identityRoles("a", "b"),
+		Facts:   []semantics.EvidenceFact{verifiedFact("a", "alice", now), verifiedFact("b", "bob", now)},
+		NativeCheckResults: []projection.NativeCheckResult{
+			result,
+			nativeResult("status_required:b", "b", projection.NativeCheckSuccess, now),
+		},
+	})
+	if err != nil {
+		t.Fatalf("cached snapshot with a freshness decision was rejected: %v", err)
+	}
+	if !rep.NativeChecksComplete {
+		t.Fatal("cached-but-attributed results did not complete the report")
+	}
+	if got := rep.Satisfaction.Satisfaction().Verdict; got != semantics.SatisfactionSatisfied {
+		t.Fatalf("verdict = %s, want SATISFIED", got)
+	}
+	if rep.NativeCheckResults[0].FreshnessDecision == nil ||
+		rep.NativeCheckResults[0].ReplayDigest == "" {
+		t.Fatalf("freshness/replay attribution was dropped: %+v", rep.NativeCheckResults[0])
+	}
+}
+
+// A verified revoked status is a failed check, never an unavailable one, and it
+// does not poison the sibling OR branch.
+func TestProjectRevokedStatusIsFailedNotUnavailable(t *testing.T) {
+	now := time.Date(2026, 10, 25, 1, 0, 0, 0, time.UTC)
+	revoked := nativeResult("status_required:a", "a", projection.NativeCheckFailed, now)
+	revoked.Reason = "emilia:revoked"
+	rep, err := projection.Project([]byte(statusBothRequirement), projection.Options{
+		Now:     now,
+		RoleMap: identityRoles("a", "b"),
+		Facts:   []semantics.EvidenceFact{verifiedFact("b", "bob", now)},
+		NativeCheckResults: []projection.NativeCheckResult{
+			revoked,
+			nativeResult("status_required:b", "b", projection.NativeCheckSuccess, now),
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := rep.Satisfaction.Satisfaction().Verdict; got != semantics.SatisfactionSatisfied {
+		t.Fatalf("verdict = %s, want SATISFIED through the b branch", got)
+	}
+	var failed, unavailable int
+	for _, result := range rep.NativeCheckResults {
+		switch result.Outcome {
+		case projection.NativeCheckFailed:
+			failed++
+			if result.Reason != "emilia:revoked" {
+				t.Fatalf("revoked reason = %q", result.Reason)
+			}
+		case projection.NativeCheckUnavailable:
+			unavailable++
+		}
+	}
+	if failed != 1 || unavailable != 0 {
+		t.Fatalf("revoked status recorded as failed=%d unavailable=%d", failed, unavailable)
+	}
+	if !rep.NativeChecksComplete {
+		t.Fatal("an explicit failed result should complete the report")
+	}
+}
+
+// When a required check has no result, the evidence-side verdict is still
+// reportable, but the report must not claim final native validation.
+func TestProjectIncompleteNativeChecksKeepSatisfactionReportable(t *testing.T) {
+	now := time.Date(2026, 10, 25, 1, 0, 0, 0, time.UTC)
+	doc := `{
+	  "@version": "EP-AEC-REQUIREMENT-v1",
+	  "requirement_id": "status-missing@1",
+	  "expression": "a",
+	  "status_required": ["a"]
+	}`
+	rep, err := projection.Project([]byte(doc), projection.Options{
+		Now:     now,
+		RoleMap: identityRoles("a"),
+		Facts:   []semantics.EvidenceFact{verifiedFact("a", "alice", now)},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := rep.Satisfaction.Satisfaction().Verdict; got != semantics.SatisfactionSatisfied {
+		t.Fatalf("verdict = %s, want SATISFIED over eligible facts", got)
+	}
+	if rep.NativeChecksComplete {
+		t.Fatal("missing status result marked native checks complete")
+	}
+	raw := projectJSON(t, rep)
+	if !strings.Contains(raw, `"nativeChecksComplete":false`) {
+		t.Fatalf("report does not expose incompleteness: %s", raw)
+	}
+}
+
+// A profile that explicitly establishes non-applicability records it as an
+// outcome; it is neither a success nor an unavailability.
+func TestProjectNativeCheckNotApplicableIsExplicit(t *testing.T) {
+	now := time.Date(2026, 10, 25, 1, 0, 0, 0, time.UTC)
+	doc := `{
+	  "@version": "EP-AEC-REQUIREMENT-v1",
+	  "requirement_id": "status-na@1",
+	  "expression": "a",
+	  "status_required": ["a"]
+	}`
+	rep, err := projection.Project([]byte(doc), projection.Options{
+		Now:     now,
+		RoleMap: identityRoles("a"),
+		Facts:   []semantics.EvidenceFact{},
+		NativeCheckResults: []projection.NativeCheckResult{
+			nativeResult("status_required:a", "a", projection.NativeCheckNotApplicable, now),
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !rep.NativeChecksComplete {
+		t.Fatal("explicit not-applicable result did not complete the report")
+	}
+	if len(rep.NativeCheckResults) != 1 ||
+		rep.NativeCheckResults[0].Outcome != projection.NativeCheckNotApplicable {
+		t.Fatalf("not-applicable outcome was not preserved: %+v", rep.NativeCheckResults)
+	}
+	if got := rep.Satisfaction.Satisfaction().Verdict; got != semantics.SatisfactionUnsatisfied {
+		t.Fatalf("verdict = %s, want UNSATISFIED with no eligible fact", got)
+	}
+	if strings.Contains(projectJSON(t, rep), "allow_unresolved") {
+		t.Fatal("not-applicable leaked the authorization-only allow_unresolved verdict")
+	}
+}
+
+// A status check names a component type, so an unpinned one is a refusal.
+func TestProjectAECRejectsUnpinnedStatusRole(t *testing.T) {
+	req := strings.Replace(emiliaRequirement,
+		`"status_required": ["ep-quorum"]`, `"status_required": ["unpinned"]`, 1)
+	if _, err := projection.Project([]byte(req), projection.Options{
+		Now:     time.Now(),
+		RoleMap: emiliaRoleMap(),
+	}); err == nil {
+		t.Fatal("unpinned status_required role accepted")
 	}
 }

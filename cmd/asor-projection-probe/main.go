@@ -106,10 +106,14 @@ func main() {
 		{ID: scopeScheme + ":crm:customer:read", Params: map[string]any{"max_rows": float64(3000)}},
 	}
 	fmt.Println("1. Mapping")
-	reportASORCase("ASOR-001", "root token maps to three grants", "mapping-exact",
-		fmt.Sprintf("grants=%d", len(rootGrants)), reflect.DeepEqual(rootGrants, rootWant))
-	reportASORCase("ASOR-002", "leaf token maps to one grant", "mapping-exact",
-		fmt.Sprintf("grants=%d", len(leafGrants)), reflect.DeepEqual(leafGrants, leafWant))
+	reportASORCase("ASOR-001", "root token maps to three grants",
+		fmt.Sprintf("grants=%d,exact=true", len(rootWant)),
+		fmt.Sprintf("grants=%d,exact=%t", len(rootGrants), reflect.DeepEqual(rootGrants, rootWant)),
+		reflect.DeepEqual(rootGrants, rootWant))
+	reportASORCase("ASOR-002", "leaf token maps to one grant",
+		fmt.Sprintf("grants=%d,exact=true", len(leafWant)),
+		fmt.Sprintf("grants=%d,exact=%t", len(leafGrants), reflect.DeepEqual(leafGrants, leafWant)),
+		reflect.DeepEqual(leafGrants, leafWant))
 	for _, g := range rootGrants {
 		fmt.Printf("   %-30s params=%v\n", g.ID, g.Params)
 	}
@@ -165,7 +169,7 @@ func main() {
 	}{
 		{"ASOR-004", "read, max_rows 2000 (inside leaf)", scopeScheme + ":crm:customer:read", 2000, "allow"},
 		{"ASOR-005", "read, max_rows 3000 (at leaf bound)", scopeScheme + ":crm:customer:read", 3000, "allow"},
-		{"ASOR-006", "read, max_rows 3001 (above leaf)", scopeScheme + ":crm:customer:read", 3001, "deny"},
+		{"ASOR-006", "read, max_rows 3001 (above leaf)", scopeScheme + ":crm:customer:read", 3001, "deny/params_exceed_grant"},
 		{"ASOR-007", "write (root only, leaf lacks it)", scopeScheme + ":crm:customer:write", 1000, "no-chain"},
 	}
 	for _, c := range cases {
@@ -181,7 +185,7 @@ func main() {
 			}
 		}
 		status := "PASS"
-		if !strings.HasPrefix(got, c.want) {
+		if got != c.want {
 			status = "FAIL"
 		}
 		fmt.Printf("%s %s %-38s want=%s got=%s\n", status, c.caseID, c.name, c.want, got)

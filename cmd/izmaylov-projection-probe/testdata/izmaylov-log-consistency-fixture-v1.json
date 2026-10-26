@@ -1,0 +1,70 @@
+{
+  "@version": "clc-izmaylov-log-consistency-fixture-v1",
+  "note": "Synthetic append-only fixture for draft-izmaylov-agent-permission-receipts-00 §9. The probe recomputes both Merkle roots from the leaf set and compares them with the two signed tree heads. No consistency-proof wire format is assumed.",
+  "now": "2026-10-25T06:00:00Z",
+  "subject": "user:alice@example.org",
+  "verifier": "izmaylov-native-verifier/1",
+  "verifier_profile_digest": "sha-256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "trust_snapshot_digest": "sha-256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+  "status_snapshot_digest": "sha-256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+  "profile_digest": "sha-256:9999999999999999999999999999999999999999999999999999999999999999",
+  "old": {
+    "root": "sha-256:c9c40d956329f7655a75f0a916db1a3357f9c027c0600c7c7f67859bf1c8f9ea",
+    "size": 4
+  },
+  "new": {
+    "root": "sha-256:e209734bbecb26e3b3f1a51c500e1f1d4c606d3098266cbd7448ce0b8e6a2d0a",
+    "size": 6
+  },
+  "leaves": [
+    "sha-256:5e084a4689dded2489525af2e4e8e4f2cce8cf9c8a74ba6f9416941367774f18",
+    "sha-256:5bd9fcebad20cc554b35afa449c6f9d6895415e5c67098e4414d4422d9ec91a0",
+    "sha-256:cb1d2dd5ef85c3e6b05f3cf5b2e6f2db81b3fbc3e37b4d7079bf3236314c6033",
+    "sha-256:ca3bca45363b2b5133a1e11825d830757298c733188e6e57f6a64208c995b5e5",
+    "sha-256:9b52eee79baaa75ab128ed3ee433895fdefa6ebe8756391d5569af1c96588be4",
+    "sha-256:36c46a77017fff17b9ebb6a68fe669a480fd2e1e9ac8edf162e17ed09d8dd61e"
+  ],
+  "residuals": [
+    "this stage recomputes roots from the leaf set; a wire-format consistency proof (e.g. RFC 6962) is not verified",
+    "tree-head signatures belong to stage 1",
+    "log operator behaviour (leaf ordering, duplicate handling) is pinned by this fixture"
+  ],
+  "cases": [
+    {
+      "id": "IZM-APPEND-001",
+      "name": "new tree extends the old one",
+      "want": "findings=none,eligible=true,satisfaction=SATISFIED"
+    },
+    {
+      "id": "IZM-APPEND-002",
+      "name": "history rewritten below the old size",
+      "leaves": [
+        "sha-256:5e084a4689dded2489525af2e4e8e4f2cce8cf9c8a74ba6f9416941367774f18",
+        "sha-256:0000000000000000000000000000000000000000000000000000000000000000",
+        "sha-256:cb1d2dd5ef85c3e6b05f3cf5b2e6f2db81b3fbc3e37b4d7079bf3236314c6033",
+        "sha-256:ca3bca45363b2b5133a1e11825d830757298c733188e6e57f6a64208c995b5e5",
+        "sha-256:9b52eee79baaa75ab128ed3ee433895fdefa6ebe8756391d5569af1c96588be4",
+        "sha-256:36c46a77017fff17b9ebb6a68fe669a480fd2e1e9ac8edf162e17ed09d8dd61e"
+      ],
+      "want": "findings=consistency-mismatch,eligible=false,satisfaction=UNSATISFIED"
+    },
+    {
+      "id": "IZM-APPEND-003",
+      "name": "new tree claims fewer leaves than the old one",
+      "new_size": 3,
+      "want": "findings=consistency-truncated,eligible=false,satisfaction=UNSATISFIED"
+    },
+    {
+      "id": "IZM-APPEND-004",
+      "name": "leaf set not supplied",
+      "leaves_omitted": true,
+      "want": "findings=consistency-unavailable,eligible=false,satisfaction=UNSATISFIED"
+    },
+    {
+      "id": "IZM-APPEND-005",
+      "name": "recomputed old root differs from the signed old head",
+      "old_root": "sha-256:0000000000000000000000000000000000000000000000000000000000000000",
+      "want": "findings=consistency-mismatch,eligible=false,satisfaction=UNSATISFIED"
+    }
+  ]
+}

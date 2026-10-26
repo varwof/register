@@ -1,0 +1,104 @@
+{
+  "@version": "clc-izmaylov-containment-fixture-v1",
+  "note": "Synthetic containment-stage fixture for draft-izmaylov-agent-permission-receipts-00 §5/§10.2. Prior log entries are ordered; the current receipt is appended. Numbers are illustrative, not real amounts.",
+  "now": "2026-10-25T03:00:00Z",
+  "subject": "user:alice@example.org",
+  "verifier": "izmaylov-native-verifier/1",
+  "verifier_profile_digest": "sha-256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "trust_snapshot_digest": "sha-256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+  "status_snapshot_digest": "sha-256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+  "profile_digest": "sha-256:9999999999999999999999999999999999999999999999999999999999999999",
+  "receipt_digest": "sha-256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "permission": {
+    "id": "perm-1",
+    "artifact_digest": "sha-256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "actions": ["payments.transfer"],
+    "never": ["provared.bulk"],
+    "with": ["svc-pay"],
+    "valid_from": "2026-10-25T00:00:00Z",
+    "valid_until": "2026-10-26T00:00:00Z",
+    "limits": [
+      {"action": "payments.transfer", "max": 10000, "per": 86400, "unit": "CNY"},
+      {"action": "payments.transfer", "each": 8000, "unit": "CNY"},
+      {"action": "payments.transfer", "count": 3, "per": 86400}
+    ]
+  },
+  "log": [
+    {"id": "r1", "action": "payments.transfer", "amount": 2000, "unit": "CNY", "when": "2026-10-25T02:00:00Z", "with": "svc-pay"},
+    {"id": "r2", "action": "payments.transfer", "amount": 2000, "unit": "CNY", "when": "2026-10-25T02:10:00Z", "with": "svc-pay"}
+  ],
+  "residuals": [
+    "countersignature and approval conditions are not modelled in this stage",
+    "cancellation state is not modelled in this stage",
+    "passkey origin/rpId binding and signature verification belong to stage 1",
+    "amounts and periods are verifier arithmetic over the supplied log; the executor's reserve/commit accounting is a separate concern"
+  ],
+  "cases": [
+    {
+      "id": "IZM-PERM-001",
+      "name": "action, party, window and limits all pass",
+      "receipt": {"id": "rcpt-1", "action": "payments.transfer", "amount": 2500, "unit": "CNY", "when": "2026-10-25T02:59:00Z", "with": "svc-pay"},
+      "want": "findings=none,eligible=true,satisfaction=SATISFIED"
+    },
+    {
+      "id": "IZM-PERM-002",
+      "name": "period total exceeds max",
+      "receipt": {"id": "rcpt-1", "action": "payments.transfer", "amount": 7000, "unit": "CNY", "when": "2026-10-25T02:59:00Z", "with": "svc-pay"},
+      "want": "findings=over-period-limit,eligible=false,satisfaction=UNSATISFIED"
+    },
+    {
+      "id": "IZM-PERM-003",
+      "name": "single amount exceeds each and period max",
+      "receipt": {"id": "rcpt-1", "action": "payments.transfer", "amount": 8500, "unit": "CNY", "when": "2026-10-25T02:59:00Z", "with": "svc-pay"},
+      "want": "findings=over-each-limit+over-period-limit,eligible=false,satisfaction=UNSATISFIED"
+    },
+    {
+      "id": "IZM-PERM-004",
+      "name": "receipt count exceeds the period count",
+      "receipt": {"id": "rcpt-4", "action": "payments.transfer", "amount": 100, "unit": "CNY", "when": "2026-10-25T02:59:00Z", "with": "svc-pay"},
+      "log": [
+        {"id": "r1", "action": "payments.transfer", "amount": 100, "unit": "CNY", "when": "2026-10-25T02:00:00Z", "with": "svc-pay"},
+        {"id": "r2", "action": "payments.transfer", "amount": 100, "unit": "CNY", "when": "2026-10-25T02:10:00Z", "with": "svc-pay"},
+        {"id": "r3", "action": "payments.transfer", "amount": 100, "unit": "CNY", "when": "2026-10-25T02:20:00Z", "with": "svc-pay"}
+      ],
+      "want": "findings=over-count-limit,eligible=false,satisfaction=UNSATISFIED"
+    },
+    {
+      "id": "IZM-PERM-005",
+      "name": "action not in the permission",
+      "receipt": {"id": "rcpt-1", "action": "payments.refund", "amount": 100, "unit": "CNY", "when": "2026-10-25T02:59:00Z", "with": "svc-pay"},
+      "want": "findings=action-not-allowed,eligible=false,satisfaction=UNSATISFIED"
+    },
+    {
+      "id": "IZM-PERM-006",
+      "name": "action prohibited by never",
+      "receipt": {"id": "rcpt-1", "action": "provared.bulk", "amount": 100, "unit": "CNY", "when": "2026-10-25T02:59:00Z", "with": "svc-pay"},
+      "want": "findings=action-not-allowed+prohibited,eligible=false,satisfaction=UNSATISFIED"
+    },
+    {
+      "id": "IZM-PERM-007",
+      "name": "service not named in with",
+      "receipt": {"id": "rcpt-1", "action": "payments.transfer", "amount": 100, "unit": "CNY", "when": "2026-10-25T02:59:00Z", "with": "svc-other"},
+      "want": "findings=party-not-allowed,eligible=false,satisfaction=UNSATISFIED"
+    },
+    {
+      "id": "IZM-PERM-008",
+      "name": "receipt outside the permission validity window",
+      "receipt": {"id": "rcpt-1", "action": "payments.transfer", "amount": 100, "unit": "CNY", "when": "2026-10-27T00:00:00Z", "with": "svc-pay"},
+      "want": "findings=outside-valid-time,eligible=false,satisfaction=UNSATISFIED"
+    },
+    {
+      "id": "IZM-PERM-009",
+      "name": "amount missing while a unit limit applies",
+      "receipt": {"id": "rcpt-1", "action": "payments.transfer", "unit": "CNY", "when": "2026-10-25T02:59:00Z", "with": "svc-pay"},
+      "want": "findings=amount-missing,eligible=false,satisfaction=UNSATISFIED"
+    },
+    {
+      "id": "IZM-PERM-010",
+      "name": "log not fully read, limits cannot be settled",
+      "receipt": {"id": "rcpt-1", "action": "payments.transfer", "amount": 100, "unit": "CNY", "when": "2026-10-25T02:59:00Z", "with": "svc-pay"},
+      "log_truncated": true,
+      "want": "findings=limits-unavailable,eligible=false,satisfaction=UNSATISFIED"
+    }
+  ]
+}

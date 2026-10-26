@@ -1,0 +1,144 @@
+{
+  "@version": "clc-izmaylov-signature-fixture-v1",
+  "note": "Synthetic Izmaylov-shaped evidence (permission, action receipt, log tree head), not production bytes. Signature and log outcomes are modelled after a native verifier; this probe does not implement WebAuthn, Ed25519 or ML-DSA verification.",
+  "now": "2026-10-25T02:00:00Z",
+  "subject": "user:alice@example.org",
+  "verifier": "izmaylov-native-verifier/1",
+  "verifier_profile_digest": "sha-256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "trust_snapshot_digest": "sha-256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+  "status_snapshot_digest": "sha-256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+  "profile_digest": "sha-256:9999999999999999999999999999999999999999999999999999999999999999",
+  "permission": {
+    "artifact_digest": "sha-256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "id": "perm-1",
+    "action": "payments.transfer",
+    "passes": 1
+  },
+  "receipt": {
+    "artifact_digest": "sha-256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "id": "rcpt-1",
+    "action": "payments.transfer",
+    "amount": "3000",
+    "unit": "CNY"
+  },
+  "log": {
+    "artifact_digest": "sha-256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "tree_size": 42,
+    "root": "sha-256:1212121212121212121212121212121212121212121212121212121212121212"
+  },
+  "checks": [
+    {
+      "check_id": "izmaylov:permission-signature",
+      "component_type": "izmaylov:permission",
+      "evidence_digest": "sha-256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "note": "the principal's passkey signature over the permission"
+    },
+    {
+      "check_id": "izmaylov:receipt-signature",
+      "component_type": "izmaylov:action-receipt",
+      "evidence_digest": "sha-256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "note": "the agent's Ed25519 (and, when implemented, ML-DSA-87) signature over the receipt"
+    },
+    {
+      "check_id": "izmaylov:log-tree-head",
+      "component_type": "izmaylov:log",
+      "evidence_digest": "sha-256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "note": "signed tree head plus the receipt's inclusion proof"
+    }
+  ],
+  "residuals": [
+    "permission containment (actions, limits, requires, never, validity window) is not evaluated in the signature stage",
+    "countersignature and approval conditions are carrier obligations",
+    "cancellation and log append-only guarantees are outside this probe",
+    "passkey origin/rpId binding is a WebAuthn verifier obligation",
+    "amount and period accounting are enforcement-side and are never reported as a signature success"
+  ],
+  "cases": [
+    {
+      "id": "IZM-SIG-001",
+      "name": "permission and receipt signatures verified, log head verified",
+      "results": {
+        "izmaylov:permission-signature": "success",
+        "izmaylov:receipt-signature": "success",
+        "izmaylov:log-tree-head": "success"
+      },
+      "reasons": {},
+      "want": "problem=none,verified=all,eligible=true,satisfaction=SATISFIED"
+    },
+    {
+      "id": "IZM-SIG-002",
+      "name": "receipt signature verified and rejected",
+      "results": {
+        "izmaylov:permission-signature": "success",
+        "izmaylov:receipt-signature": "failed",
+        "izmaylov:log-tree-head": "success"
+      },
+      "reasons": {
+        "izmaylov:receipt-signature": "izmaylov:signature-failed"
+      },
+      "want": "problem=found,verified=all,eligible=false,satisfaction=UNSATISFIED"
+    },
+    {
+      "id": "IZM-SIG-003",
+      "name": "ML-DSA-87 not implemented, receipt only Ed25519",
+      "results": {
+        "izmaylov:permission-signature": "success",
+        "izmaylov:receipt-signature": "unavailable",
+        "izmaylov:log-tree-head": "success"
+      },
+      "reasons": {
+        "izmaylov:receipt-signature": "izmaylov:signature-method-unsupported"
+      },
+      "want": "problem=none,verified=partial,eligible=false,satisfaction=UNSATISFIED"
+    },
+    {
+      "id": "IZM-SIG-004",
+      "name": "permission passkey signature rejected",
+      "results": {
+        "izmaylov:permission-signature": "failed",
+        "izmaylov:receipt-signature": "success",
+        "izmaylov:log-tree-head": "success"
+      },
+      "reasons": {
+        "izmaylov:permission-signature": "izmaylov:signature-failed"
+      },
+      "want": "problem=found,verified=all,eligible=false,satisfaction=UNSATISFIED"
+    },
+    {
+      "id": "IZM-SIG-005",
+      "name": "tree-head key unavailable",
+      "results": {
+        "izmaylov:permission-signature": "success",
+        "izmaylov:receipt-signature": "success",
+        "izmaylov:log-tree-head": "unavailable"
+      },
+      "reasons": {
+        "izmaylov:log-tree-head": "izmaylov:tree-head-key-unavailable"
+      },
+      "want": "problem=none,verified=partial,eligible=false,satisfaction=UNSATISFIED"
+    },
+    {
+      "id": "IZM-SIG-006",
+      "name": "log check omitted",
+      "results": {
+        "izmaylov:permission-signature": "success",
+        "izmaylov:receipt-signature": "success"
+      },
+      "reasons": {},
+      "want": "problem=none,verified=partial,eligible=false,satisfaction=UNSATISFIED"
+    },
+    {
+      "id": "IZM-SIG-007",
+      "name": "permission signature not verified, receipt and log verified",
+      "results": {
+        "izmaylov:permission-signature": "unavailable",
+        "izmaylov:receipt-signature": "success",
+        "izmaylov:log-tree-head": "success"
+      },
+      "reasons": {
+        "izmaylov:permission-signature": "izmaylov:passkey-trust-anchor-unavailable"
+      },
+      "want": "problem=none,verified=partial,eligible=false,satisfaction=UNSATISFIED"
+    }
+  ]
+}

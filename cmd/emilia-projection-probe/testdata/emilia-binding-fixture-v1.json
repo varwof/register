@@ -3,6 +3,73 @@
   "now": "2026-09-13T12:00:00Z",
   "expected_subject": "qhYb5aZfz3Gl_RpCeLk7LyW9POxu1EIC9t0z8Cif48s",
   "binding_role": "clc:evidence-binding:AAAADXBvbGljeS1wZXJtaXQAAAAHcGVybWl0cwAAAAllcC1xdW9ydW0",
+  "native_checks": {
+    "check_id": "status_required:ep-quorum",
+    "component_type": "ep-quorum",
+    "verifier": "native-verifier",
+    "verifier_profile_digest": "sha-256:3f1c2d6a1b0e5c9d7a4f8b2e6c1d9a3f5b7e0c2d4a6f8b1e3c5d7a9f0b2e4c6d",
+    "note": "One explicit record per required check and component; the four outcomes stay distinct, and completeness is never inferred from an empty unavailable list.",
+    "cases": [
+      {
+        "outcome": "success",
+        "reason": "",
+        "expected_complete": true,
+        "note": "the required check ran and passed"
+      },
+      {
+        "outcome": "failed",
+        "reason": "emilia:revoked",
+        "expected_complete": true,
+        "note": "a verified revoked status is failed, never unavailable"
+      },
+      {
+        "outcome": "unavailable",
+        "reason": "emilia:unavailable:timeout",
+        "expected_complete": true,
+        "note": "the check could not be run; the reason stays in the report"
+      },
+      {
+        "outcome": "not_applicable",
+        "reason": "emilia:not-applicable:no-status-material",
+        "expected_complete": true,
+        "note": "the profile explicitly establishes non-applicability"
+      },
+      {
+        "outcome": "",
+        "reason": "",
+        "expected_complete": false,
+        "note": "no record: evidence-side satisfaction stays reportable, native checks are incomplete"
+      }
+    ]
+  },
+  "source_requirement": {
+    "@version": "EP-AEC-REQUIREMENT-v1",
+    "requirement_id": "treasury-wire-evidence@7",
+    "purpose": "pre-execution evidence check",
+    "expression": "ep-quorum AND policy-permit",
+    "freshness_sec": {
+      "ep-quorum": 300,
+      "policy-permit": 600
+    },
+    "status_required": [
+      "ep-quorum"
+    ],
+    "role_constraints": [
+      {
+        "type": "distinct-subject-quorum",
+        "component_type": "ep-human-authorization",
+        "threshold": 2,
+        "subject_id_source": "native-verifier"
+      }
+    ],
+    "required_bindings": [
+      {
+        "from_type": "policy-permit",
+        "relation": "permits",
+        "to_type": "ep-quorum"
+      }
+    ]
+  },
   "mapped_requirement": {
     "@version": "CLC-REQUIREMENT-v1",
     "requirement_id": "treasury-wire-evidence@7",
@@ -31,87 +98,158 @@
     {
       "id": "EMI-AEC-001",
       "name": "two verified approvals, permit and binding",
-      "want": "SATISFIED",
       "expected_got": "SATISFIED",
       "facts": {
         "ep-quorum": [
-          {"subject": "alice", "verified": true, "age_sec": 30},
-          {"subject": "bob", "verified": true, "age_sec": 20}
+          {
+            "subject": "alice",
+            "verified": true,
+            "age_sec": 30
+          },
+          {
+            "subject": "bob",
+            "verified": true,
+            "age_sec": 20
+          }
         ],
         "policy-permit": [
-          {"subject": "policy", "verified": true, "age_sec": 60}
+          {
+            "subject": "policy",
+            "verified": true,
+            "age_sec": 60
+          }
         ],
         "clc:evidence-binding:AAAADXBvbGljeS1wZXJtaXQAAAAHcGVybWl0cwAAAAllcC1xdW9ydW0": [
-          {"subject": "$binding", "verified": true, "age_sec": 60}
+          {
+            "subject": "$binding",
+            "verified": true,
+            "age_sec": 60
+          }
         ]
       }
     },
     {
       "id": "EMI-AEC-002",
       "name": "one approval unverified",
-      "want": "UNSATISFIED",
       "expected_got": "UNSATISFIED/quorum:distinct_subjects=1<threshold=2",
       "facts": {
         "ep-quorum": [
-          {"subject": "alice", "verified": true, "age_sec": 30},
-          {"subject": "bob", "verified": false, "age_sec": 20}
+          {
+            "subject": "alice",
+            "verified": true,
+            "age_sec": 30
+          },
+          {
+            "subject": "bob",
+            "verified": false,
+            "age_sec": 20
+          }
         ],
         "policy-permit": [
-          {"subject": "policy", "verified": true, "age_sec": 60}
+          {
+            "subject": "policy",
+            "verified": true,
+            "age_sec": 60
+          }
         ],
         "clc:evidence-binding:AAAADXBvbGljeS1wZXJtaXQAAAAHcGVybWl0cwAAAAllcC1xdW9ydW0": [
-          {"subject": "$binding", "verified": true, "age_sec": 60}
+          {
+            "subject": "$binding",
+            "verified": true,
+            "age_sec": 60
+          }
         ]
       }
     },
     {
       "id": "EMI-AEC-003",
       "name": "fresh binding does not refresh an old approval",
-      "want": "UNSATISFIED",
       "expected_got": "UNSATISFIED/freshness:stale",
       "facts": {
         "ep-quorum": [
-          {"subject": "alice", "verified": true, "age_sec": 301},
-          {"subject": "bob", "verified": true, "age_sec": 20}
+          {
+            "subject": "alice",
+            "verified": true,
+            "age_sec": 301
+          },
+          {
+            "subject": "bob",
+            "verified": true,
+            "age_sec": 20
+          }
         ],
         "policy-permit": [
-          {"subject": "policy", "verified": true, "age_sec": 60}
+          {
+            "subject": "policy",
+            "verified": true,
+            "age_sec": 60
+          }
         ],
         "clc:evidence-binding:AAAADXBvbGljeS1wZXJtaXQAAAAHcGVybWl0cwAAAAllcC1xdW9ydW0": [
-          {"subject": "$binding", "verified": true, "age_sec": 1}
+          {
+            "subject": "$binding",
+            "verified": true,
+            "age_sec": 1
+          }
         ]
       }
     },
     {
       "id": "EMI-AEC-004",
       "name": "missing derived binding fact",
-      "want": "UNSATISFIED",
       "expected_got": "UNSATISFIED/requirement:expression_false",
       "facts": {
         "ep-quorum": [
-          {"subject": "alice", "verified": true, "age_sec": 30},
-          {"subject": "bob", "verified": true, "age_sec": 20}
+          {
+            "subject": "alice",
+            "verified": true,
+            "age_sec": 30
+          },
+          {
+            "subject": "bob",
+            "verified": true,
+            "age_sec": 20
+          }
         ],
         "policy-permit": [
-          {"subject": "policy", "verified": true, "age_sec": 60}
+          {
+            "subject": "policy",
+            "verified": true,
+            "age_sec": 60
+          }
         ]
       }
     },
     {
       "id": "EMI-AEC-005",
       "name": "facts typed ep-human-authorization (literal component_type)",
-      "want": "UNSATISFIED",
       "expected_got": "UNSATISFIED/requirement:expression_false",
       "facts": {
         "ep-human-authorization": [
-          {"subject": "alice", "verified": true, "age_sec": 30},
-          {"subject": "bob", "verified": true, "age_sec": 20}
+          {
+            "subject": "alice",
+            "verified": true,
+            "age_sec": 30
+          },
+          {
+            "subject": "bob",
+            "verified": true,
+            "age_sec": 20
+          }
         ],
         "policy-permit": [
-          {"subject": "policy", "verified": true, "age_sec": 60}
+          {
+            "subject": "policy",
+            "verified": true,
+            "age_sec": 60
+          }
         ],
         "clc:evidence-binding:AAAADXBvbGljeS1wZXJtaXQAAAAHcGVybWl0cwAAAAllcC1xdW9ydW0": [
-          {"subject": "$binding", "verified": true, "age_sec": 60}
+          {
+            "subject": "$binding",
+            "verified": true,
+            "age_sec": 60
+          }
         ]
       }
     }
@@ -119,12 +257,18 @@
   "caid": {
     "type": {
       "name": "tool.call.1",
-      "material": ["tool", "args"]
+      "material": [
+        "tool",
+        "args"
+      ]
     },
     "suite": "jcs-sha256",
     "operation": {
       "tool": "payments.transfer",
-      "args": {"amount": 3000, "currency": "CNY"}
+      "args": {
+        "amount": 3000,
+        "currency": "CNY"
+      }
     },
     "cases": [
       {
@@ -132,7 +276,10 @@
         "name": "CLC projection: extra non-material occurrence_id",
         "observed": {
           "tool": "payments.transfer",
-          "args": {"amount": 3000, "currency": "CNY"},
+          "args": {
+            "amount": 3000,
+            "currency": "CNY"
+          },
           "occurrence_id": "ignored-not-material"
         },
         "want": "MATCH"
@@ -142,7 +289,10 @@
         "name": "CLC projection: material args amount changed",
         "observed": {
           "tool": "payments.transfer",
-          "args": {"amount": 3001, "currency": "CNY"}
+          "args": {
+            "amount": 3001,
+            "currency": "CNY"
+          }
         },
         "want": "NOT_EQUIVALENT"
       }
@@ -176,7 +326,10 @@
     "action": {
       "type": "tool.call.1",
       "tool": "payments.transfer",
-      "args": {"amount": 3000, "currency": "CNY"}
+      "args": {
+        "amount": 3000,
+        "currency": "CNY"
+      }
     },
     "status": {
       "outcome": "valid",
@@ -188,12 +341,40 @@
     "trust": {
       "verifier": "native-verifier",
       "result": "verified"
-    }
+    },
+    "requirement_id": "treasury-wire-evidence@7",
+    "relation": "permits"
   },
   "mutations": {
-    "source": {"path": ["source", "artifact_id"], "value": "permit-8"},
-    "target": {"path": ["targets", 1, "subject"], "value": "mallory"},
-    "action": {"path": ["action", "args", "amount"], "value": 3001},
-    "status": {"path": ["status", "outcome"], "value": "revoked"}
+    "source": {
+      "path": [
+        "source",
+        "artifact_id"
+      ],
+      "value": "permit-8"
+    },
+    "target": {
+      "path": [
+        "targets",
+        1,
+        "subject"
+      ],
+      "value": "mallory"
+    },
+    "action": {
+      "path": [
+        "action",
+        "args",
+        "amount"
+      ],
+      "value": 3001
+    },
+    "status": {
+      "path": [
+        "status",
+        "outcome"
+      ],
+      "value": "revoked"
+    }
   }
 }

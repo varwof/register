@@ -31,22 +31,6 @@ import (
 	"github.com/varwof/register/semantics"
 )
 
-const aecExample = `{
-  "@version": "EP-AEC-REQUIREMENT-v1",
-  "requirement_id": "treasury-wire-evidence@7",
-  "purpose": "pre-execution evidence check",
-  "expression": "ep-quorum AND policy-permit",
-  "freshness_sec": {"ep-quorum": 300, "policy-permit": 600},
-  "status_required": ["ep-quorum"],
-  "role_constraints": [
-    {"type": "distinct-subject-quorum", "component_type": "ep-human-authorization",
-     "threshold": 2, "subject_id_source": "native-verifier"}
-  ],
-  "required_bindings": [
-    {"from_type": "policy-permit", "relation": "permits", "to_type": "ep-quorum"}
-  ]
-}`
-
 func digestJSON(v any) string {
 	raw, err := semantics.CanonicalJSON(v)
 	if err != nil {
@@ -57,11 +41,13 @@ func digestJSON(v any) string {
 }
 
 type bindingFixture struct {
-	Source  map[string]any   `json:"source"`
-	Targets []map[string]any `json:"targets"`
-	Action  map[string]any   `json:"action"`
-	Status  map[string]any   `json:"status"`
-	Trust   map[string]any   `json:"trust"`
+	RequirementID string           `json:"requirement_id"`
+	Relation      string           `json:"relation"`
+	Source        map[string]any   `json:"source"`
+	Targets       []map[string]any `json:"targets"`
+	Action        map[string]any   `json:"action"`
+	Status        map[string]any   `json:"status"`
+	Trust         map[string]any   `json:"trust"`
 }
 
 type bindingMutation struct {
@@ -71,6 +57,7 @@ type bindingMutation struct {
 
 type bindingFixtureDocument struct {
 	Now                string                `json:"now"`
+	SourceRequirement  json.RawMessage       `json:"source_requirement"`
 	ExpectedSubject    string                `json:"expected_subject"`
 	BindingRole        string                `json:"binding_role"`
 	MappedRequirement  semantics.Requirement `json:"mapped_requirement"`
@@ -78,8 +65,52 @@ type bindingFixtureDocument struct {
 		Source    string `json:"source"`
 		Projected string `json:"projected"`
 	} `json:"requirement_digests"`
-	Binding   bindingFixture             `json:"binding"`
-	Mutations map[string]bindingMutation `json:"mutations"`
+	Binding      bindingFixture             `json:"binding"`
+	NativeChecks nativeCheckFixture         `json:"native_checks"`
+	Mutations    map[string]bindingMutation `json:"mutations"`
+	// EvidenceCases are the shared evaluation cases.  Go reads them from the
+	// fixture too, so all three probes evaluate the same facts instead of
+	// keeping a second copy that can drift.
+	EvidenceCases []struct {
+		ID          string `json:"id"`
+		Name        string `json:"name"`
+		ExpectedGot string `json:"expected_got"`
+		Facts       map[string][]struct {
+			Subject  string `json:"subject"`
+			Verified bool   `json:"verified"`
+			AgeSec   int    `json:"age_sec"`
+		} `json:"facts"`
+	} `json:"evidence_cases"`
+}
+
+// nativeCheckFixture pins the explicit native-status-check report cases shared
+// by the probes.  The four outcomes are distinct; the last case has no record
+// at all and must leave the report incomplete without changing the
+// evidence-side satisfaction of an otherwise satisfied requirement.
+type nativeCheckFixture struct {
+	CheckID               string `json:"check_id"`
+	ComponentType         string `json:"component_type"`
+	Verifier              string `json:"verifier"`
+	VerifierProfileDigest string `json:"verifier_profile_digest"`
+	Cases                 []struct {
+		Outcome          string `json:"outcome"`
+		Reason           string `json:"reason"`
+		ExpectedComplete bool   `json:"expected_complete"`
+		Note             string `json:"note"`
+	} `json:"cases"`
+}
+
+// reportDigest renders a fixture object as the report's canonical typed digest
+// (sha-256:<hex>).  digestJSON keeps its "sha256:<hex>" spelling because the
+// relation tuple it feeds is a cross-language object shared with the Python and
+// TypeScript probes; the two layers must not silently share one convention.
+func reportDigest(v any) projection.Digest {
+	raw, err := semantics.CanonicalJSON(v)
+	if err != nil {
+		panic(err)
+	}
+	sum := sha256.Sum256(raw)
+	return projection.Digest("sha-256:" + hex.EncodeToString(sum[:]))
 }
 
 func digestLabel(d *semantics.Digest) string {
@@ -122,15 +153,15 @@ func (f bindingFixture) tuple() map[string]any {
 	sort.Strings(subjects)
 	sort.Strings(issuedAt)
 	return map[string]any{
-		"requirement_id":    "treasury-wire-evidence@7",
+		"requirement_id":    f.RequirementID,
 		"policy_generation": f.Source["policy_generation"],
 		"from": map[string]any{
-			"type":            "policy-permit",
+			"type":            f.Source["type"],
 			"artifact_digest": digestJSON(f.Source),
 		},
-		"relation": "permits",
+		"relation": f.Relation,
 		"to": map[string]any{
-			"type":                "ep-quorum",
+			"type":                f.Targets[0]["type"],
 			"artifact_set_digest": digestJSON(f.Targets),
 		},
 		"action_digest":      digestJSON(f.Action),
@@ -207,6 +238,14 @@ func evaluate(req semantics.Requirement, fs []semantics.EvidenceFact, now time.T
 	return fmt.Sprintf("%s/%s", sat.Verdict, sat.Reason)
 }
 
+func probeRoleMap() map[string]string {
+	return map[string]string{
+		"ep-human-authorization": "ep-quorum",
+		"ep-quorum":              "ep-quorum",
+		"policy-permit":          "policy-permit",
+	}
+}
+
 func main() {
 	now := fixtureNow()
 
@@ -214,20 +253,17 @@ func main() {
 	fmt.Println("AEC requirement: draft-schrock-ep-authorization-evidence-chain-08 §4")
 	fmt.Println()
 
-	projected, err := projection.Project([]byte(aecExample), projection.Options{
-		Now: now,
-		RoleMap: map[string]string{
-			"ep-human-authorization": "ep-quorum",
-			"ep-quorum":              "ep-quorum",
-			"policy-permit":          "policy-permit",
-		},
+	fixtureDoc := loadBindingFixture()
+	source := []byte(fixtureDoc.SourceRequirement)
+	projected, err := projection.Project(source, projection.Options{
+		Now:     now,
+		RoleMap: probeRoleMap(),
 	})
 	if err != nil {
 		panic(err)
 	}
 	mapped := *projected.Requirement
 	residual := projected.Residuals
-	fixtureDoc := loadBindingFixture()
 	mappedWant, _ := semantics.CanonicalJSON(fixtureDoc.MappedRequirement)
 	mappedGot, _ := semantics.CanonicalJSON(mapped)
 	if string(mappedGot) != string(mappedWant) {
@@ -246,6 +282,102 @@ func main() {
 	if fixtureDoc.RequirementDigests.Projected != "" && projectedDigest != fixtureDoc.RequirementDigests.Projected {
 		panic("projected requirement digest differs from shared fixture")
 	}
+	projectionCases := []struct {
+		caseID string
+		name   string
+		want   string
+		got    string
+	}{
+		{"EMI-PROJ-001", "AEC projects to the pinned CLC requirement", "match",
+			map[bool]string{true: "match", false: "different"}[string(mappedGot) == string(mappedWant)]},
+		{"EMI-PROJ-002", "source requirement digest", fixtureDoc.RequirementDigests.Source, sourceDigest},
+		{"EMI-PROJ-003", "projected requirement digest", fixtureDoc.RequirementDigests.Projected, projectedDigest},
+	}
+	for _, c := range projectionCases {
+		status := "PASS"
+		if c.got != c.want {
+			status = "FAIL"
+		}
+		fmt.Printf("%s %s %-46s want=%s got=%s\n", status, c.caseID, c.name, c.want, c.got)
+	}
+	negativeCases := []struct {
+		caseID string
+		name   string
+		apply  func(map[string]any)
+	}{
+		{"EMI-PROJ-004", "unknown AEC member rejected", func(doc map[string]any) {
+			doc["authorized"] = true
+		}},
+		{"EMI-PROJ-005", "unpinned role rejected", func(doc map[string]any) {
+			doc["freshness_sec"] = map[string]any{"unpinned": 30}
+		}},
+		{"EMI-PROJ-006", "over-long projected expression rejected", func(doc map[string]any) {
+			doc["expression"] = strings.Repeat("a", 520)
+		}},
+		{"EMI-PROJ-007", "unknown role constraint rejected", func(doc map[string]any) {
+			doc["role_constraints"].([]any)[0].(map[string]any)["type"] = "new-constraint"
+		}},
+		{"EMI-PROJ-008", "presenter-supplied subject rejected", func(doc map[string]any) {
+			doc["role_constraints"].([]any)[0].(map[string]any)["subject_id_source"] = "presenter"
+		}},
+		{"EMI-PROJ-009", "empty binding part rejected", func(doc map[string]any) {
+			doc["required_bindings"].([]any)[0].(map[string]any)["from_type"] = ""
+		}},
+		{"EMI-PROJ-010", "quorum below two rejected", func(doc map[string]any) {
+			doc["role_constraints"].([]any)[0].(map[string]any)["threshold"] = 1
+		}},
+		{"EMI-PROJ-011", "invalid expression grammar rejected", func(doc map[string]any) {
+			doc["expression"] = "ep-quorum AND"
+		}},
+		{"EMI-PROJ-012", "unknown nested role-constraint member rejected", func(doc map[string]any) {
+			doc["role_constraints"].([]any)[0].(map[string]any)["note"] = "x"
+		}},
+		{"EMI-PROJ-013", "negative freshness rejected", func(doc map[string]any) {
+			doc["freshness_sec"] = map[string]any{"ep-quorum": -1}
+		}},
+		{"EMI-PROJ-014", "unknown AEC version rejected", func(doc map[string]any) {
+			doc["@version"] = "EP-AEC-REQUIREMENT-v2"
+		}},
+		{"EMI-PROJ-015", "missing requirement id rejected", func(doc map[string]any) {
+			delete(doc, "requirement_id")
+		}},
+		{"EMI-PROJ-016", "invalid binding identifier rejected", func(doc map[string]any) {
+			doc["required_bindings"].([]any)[0].(map[string]any)["from_type"] = "policy permit"
+		}},
+		{"EMI-PROJ-017", "over-long binding role rejected", func(doc map[string]any) {
+			doc["required_bindings"].([]any)[0].(map[string]any)["from_type"] = strings.Repeat("a", 200)
+		}},
+		{"EMI-PROJ-018", "unknown nested binding member rejected", func(doc map[string]any) {
+			doc["required_bindings"].([]any)[0].(map[string]any)["note"] = "x"
+		}},
+		{"EMI-PROJ-019", "unpinned status_required role rejected", func(doc map[string]any) {
+			doc["status_required"] = []any{"unpinned"}
+		}},
+	}
+	for _, c := range negativeCases {
+		var doc map[string]any
+		if err := json.Unmarshal(source, &doc); err != nil {
+			panic(err)
+		}
+		c.apply(doc)
+		raw, err := json.Marshal(doc)
+		if err != nil {
+			panic(err)
+		}
+		_, projectErr := projection.Project(raw, projection.Options{
+			Now:     now,
+			RoleMap: probeRoleMap(),
+		})
+		got := "rejected"
+		if projectErr == nil {
+			got = "accepted"
+		}
+		status := "PASS"
+		if got != "rejected" {
+			status = "FAIL"
+		}
+		fmt.Printf("%s %s %-46s want=rejected got=%s\n", status, c.caseID, c.name, got)
+	}
 	fmt.Println("   residuals:")
 	for _, r := range residual {
 		fmt.Println("   - " + r)
@@ -262,58 +394,47 @@ func main() {
 		panic("binding role differs from shared fixture")
 	}
 	bindingFixture := baseBindingFixture()
+	// The tuple endpoints must be the relation the requirement names, not a
+	// second copy that can drift from it.
+	if tupleRole, err := projection.BindingRoleName(
+		bindingFixture.Source["type"].(string), bindingFixture.Relation,
+		bindingFixture.Targets[0]["type"].(string)); err != nil || tupleRole != bindingRole {
+		panic("binding tuple does not match the required binding")
+	}
 	bindingTuple, _ := semantics.CanonicalJSON(bindingFixture.tuple())
 	fmt.Printf("   derived binding role: %s\n", bindingRole)
 	fmt.Printf("   relation tuple (JCS): %s\n", bindingTuple)
 	fmt.Printf("   derived binding subject: %s\n", bindingSubject(bindingFixture))
 	fmt.Println()
 
-	type ent = struct {
+	baseBindingSubject := bindingSubject(bindingFixture)
+	type caseFact = struct {
 		subject  string
 		verified bool
 		ago      time.Duration
 	}
-	baseBindingSubject := bindingSubject(bindingFixture)
-	cases := []struct {
-		caseID string
-		name   string
-		facts  map[string][]ent
-		expect string
-	}{
-		{"EMI-AEC-001", "two verified approvals, permit and binding", map[string][]ent{
-			"ep-quorum":     {{"alice", true, 30 * time.Second}, {"bob", true, 20 * time.Second}},
-			"policy-permit": {{"policy", true, 60 * time.Second}},
-			bindingRole:     {{baseBindingSubject, true, 60 * time.Second}},
-		}, "SATISFIED"},
-		{"EMI-AEC-002", "one approval unverified", map[string][]ent{
-			"ep-quorum":     {{"alice", true, 30 * time.Second}, {"bob", false, 20 * time.Second}},
-			"policy-permit": {{"policy", true, 60 * time.Second}},
-			bindingRole:     {{baseBindingSubject, true, 60 * time.Second}},
-		}, "UNSATISFIED"},
-		{"EMI-AEC-003", "fresh binding does not refresh an old approval", map[string][]ent{
-			"ep-quorum":     {{"alice", true, 301 * time.Second}, {"bob", true, 20 * time.Second}},
-			"policy-permit": {{"policy", true, 60 * time.Second}},
-			bindingRole:     {{baseBindingSubject, true, 1 * time.Second}},
-		}, "UNSATISFIED"},
-		{"EMI-AEC-004", "missing derived binding fact", map[string][]ent{
-			"ep-quorum":     {{"alice", true, 30 * time.Second}, {"bob", true, 20 * time.Second}},
-			"policy-permit": {{"policy", true, 60 * time.Second}},
-		}, "UNSATISFIED"},
-		{"EMI-AEC-005", "facts typed ep-human-authorization (literal component_type)", map[string][]ent{
-			"ep-human-authorization": {{"alice", true, 30 * time.Second}, {"bob", true, 20 * time.Second}},
-			"policy-permit":          {{"policy", true, 60 * time.Second}},
-			bindingRole:              {{baseBindingSubject, true, 60 * time.Second}},
-		}, "UNSATISFIED"},
-	}
 	fmt.Println("2. CLC evaluation over projected facts (§10)")
-	for _, c := range cases {
-		got := evaluate(mapped, facts(now, c.facts), now)
-		verdict := strings.SplitN(got, "/", 2)[0]
+	for _, c := range fixtureDoc.EvidenceCases {
+		entities := make(map[string][]caseFact, len(c.Facts))
+		for role, entries := range c.Facts {
+			for _, entry := range entries {
+				subject := entry.Subject
+				if subject == "$binding" {
+					subject = baseBindingSubject
+				}
+				entities[role] = append(entities[role], caseFact{
+					subject:  subject,
+					verified: entry.Verified,
+					ago:      time.Duration(entry.AgeSec) * time.Second,
+				})
+			}
+		}
+		got := evaluate(mapped, facts(now, entities), now)
 		status := "PASS"
-		if verdict != c.expect {
+		if got != c.ExpectedGot {
 			status = "FAIL"
 		}
-		fmt.Printf("%s %s %-52s want=%s got=%s\n", status, c.caseID, c.name, c.expect, got)
+		fmt.Printf("%s %s %-52s want=%s got=%s\n", status, c.ID, c.Name, c.ExpectedGot, got)
 	}
 	fmt.Println()
 
@@ -364,6 +485,12 @@ func main() {
 			baseBindingSubject,
 		},
 	}
+	mutationIDs := map[string]string{
+		"source": "EMI-BIND-002",
+		"target": "EMI-BIND-003",
+		"action": "EMI-BIND-004",
+		"status": "EMI-BIND-005",
+	}
 	for _, mutation := range []string{"source", "target", "action", "status"} {
 		bindingCases = append(bindingCases, struct {
 			caseID string
@@ -371,13 +498,13 @@ func main() {
 			want   string
 			got    string
 		}{
-			"EMI-BIND-00" + fmt.Sprint(len(bindingCases)+1),
+			mutationIDs[mutation],
 			mutation + " mutation changes the relation subject",
 			"different",
 			map[bool]string{true: "different", false: "unchanged"}[bindingSubject(mutatedBindingFixture(mutation)) != baseBindingSubject],
 		})
 	}
-	opaque := evaluate(mapped, facts(now, map[string][]ent{
+	opaque := evaluate(mapped, facts(now, map[string][]caseFact{
 		"ep-quorum":     {{"alice", true, 30 * time.Second}, {"bob", true, 20 * time.Second}},
 		"policy-permit": {{"policy", true, 60 * time.Second}},
 		bindingRole:     {{"arbitrary-unbound-subject", true, 60 * time.Second}},
@@ -399,6 +526,89 @@ func main() {
 			status = "FAIL"
 		}
 		fmt.Printf("%s %s %-55s want=%s got=%s\n", status, c.caseID, c.name, c.want, c.got)
+	}
+	fmt.Println()
+
+	// Section 5 is informational, not a new set of case IDs: the cross-language
+	// probes consume the same fixture and must keep reporting the same EMILIA
+	// cases.  Each line asserts the completeness rule by panicking on a
+	// mismatch, so a wrong report fails the probe's exit status.
+	fmt.Println("5. Native status-check results (explicit, never inferred from an empty list)")
+	native := fixtureDoc.NativeChecks
+	binding := baseBindingFixture()
+	attribution := func() projection.NativeCheckResult {
+		return projection.NativeCheckResult{
+			CheckID:               native.CheckID,
+			ComponentType:         native.ComponentType,
+			EvidenceDigest:        reportDigest(binding.Targets),
+			Verifier:              native.Verifier,
+			VerifierProfileDigest: projection.Digest(native.VerifierProfileDigest),
+			TrustSnapshotDigest:   reportDigest(binding.Trust),
+			StatusSnapshotDigest:  reportDigest(binding.Status),
+			VerificationTime:      now,
+			FreshnessDecision:     &projection.FreshnessDecision{Verdict: projection.FreshnessFresh},
+		}
+	}
+	eligibleFacts := facts(now, map[string][]struct {
+		subject  string
+		verified bool
+		ago      time.Duration
+	}{
+		"ep-quorum":     {{"alice", true, 30 * time.Second}, {"bob", true, 20 * time.Second}},
+		"policy-permit": {{"policy", true, 60 * time.Second}},
+		bindingRole:     {{baseBindingSubject, true, 60 * time.Second}},
+	})
+	for _, c := range native.Cases {
+		var results []projection.NativeCheckResult
+		if c.Outcome != "" {
+			result := attribution()
+			result.Outcome = projection.NativeCheckOutcome(c.Outcome)
+			result.Reason = c.Reason
+			results = append(results, result)
+		}
+		// The last case intentionally supplies eligible facts and no result:
+		// the evidence-side verdict stays SATISFIED while the report is not
+		// complete, which is exactly the boundary this section documents.
+		suppliedFacts := []semantics.EvidenceFact(nil)
+		if c.Outcome == "" {
+			suppliedFacts = eligibleFacts
+		}
+		rep, err := projection.Project(source, projection.Options{
+			Now:     now,
+			RoleMap: probeRoleMap(),
+			Facts:   suppliedFacts,
+			// The EMILIA profile supplies the expected component inventory;
+			// otherwise completeness would only check that a result with the
+			// right check id exists, not which artifact it came from.
+			NativeCheckExpectations: []projection.NativeCheckExpectation{{
+				CheckID:        native.CheckID,
+				ComponentType:  native.ComponentType,
+				EvidenceDigest: reportDigest(binding.Targets),
+			}},
+			NativeCheckResults: results,
+		})
+		if err != nil {
+			panic(err)
+		}
+		if rep.NativeChecksComplete != c.ExpectedComplete {
+			panic(fmt.Sprintf(
+				"native check %q: complete=%v, fixture expects %v",
+				c.Outcome, rep.NativeChecksComplete, c.ExpectedComplete))
+		}
+		outcome := c.Outcome
+		if outcome == "" {
+			outcome = "(no result)"
+		}
+		satisfaction := "not-evaluated"
+		if rep.Satisfaction != nil {
+			sat := rep.Satisfaction.Satisfaction()
+			satisfaction = string(sat.Verdict)
+			if sat.Reason != "" {
+				satisfaction += "/" + sat.Reason
+			}
+		}
+		fmt.Printf("   %-14s complete=%-5v satisfaction=%-14s reason=%s\n",
+			outcome, rep.NativeChecksComplete, satisfaction, c.Reason)
 	}
 }
 

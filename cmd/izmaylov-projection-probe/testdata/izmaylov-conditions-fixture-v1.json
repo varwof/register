@@ -1,0 +1,427 @@
+{
+  "@version": "clc-izmaylov-conditions-fixture-v1",
+  "note": "Synthetic conditions-stage fixture for draft-izmaylov-agent-permission-receipts-00 §5.1/§6/§8/§10.2. Signature validity is a modelled boolean; presence, field match, reuse and date ordering are computed.",
+  "now": "2026-10-25T04:00:00Z",
+  "subject": "user:alice@example.org",
+  "verifier": "izmaylov-native-verifier/1",
+  "verifier_profile_digest": "sha-256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "trust_snapshot_digest": "sha-256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+  "status_snapshot_digest": "sha-256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+  "profile_digest": "sha-256:9999999999999999999999999999999999999999999999999999999999999999",
+  "receipt_digest": "sha-256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "permission": {
+    "id": "perm-1",
+    "artifact_digest": "sha-256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "action": "payments.transfer",
+    "with": [
+      {
+        "id": "svc-pay",
+        "has_keys": true
+      }
+    ],
+    "requires": [
+      {
+        "need": "countersignature",
+        "action": "payments.transfer",
+        "above": 1000,
+        "unit": "CNY"
+      },
+      {
+        "need": "approval",
+        "action": "payments.transfer"
+      }
+    ]
+  },
+  "receipt": {
+    "id": "rcpt-1",
+    "action": "payments.transfer",
+    "amount": 2500,
+    "unit": "CNY",
+    "when": "2026-10-25T03:59:00Z",
+    "with": "svc-pay",
+    "details": [
+      {
+        "name": "invoice.pdf",
+        "sha256": "sha-256:1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
+      }
+    ]
+  },
+  "log": [
+    {
+      "kind": "receipt",
+      "id": "r1",
+      "action": "payments.transfer",
+      "amount": 100,
+      "unit": "CNY",
+      "when": "2026-10-25T03:00:00Z",
+      "with": "svc-pay"
+    }
+  ],
+  "residuals": [
+    "approval signature verification against the permission's issuer is modelled, not executed",
+    "countersignature signature verification against the service's keys is modelled, not executed",
+    "approval's 'slip' and 'details' matching are not modelled",
+    "cancellation acknowledgement and the stricter timed-cancellation rule are not modelled",
+    "log append-only proofs and signed tree heads belong to stage 1"
+  ],
+  "cases": [
+    {
+      "id": "IZM-COND-001",
+      "name": "countersignature and approval present and matching",
+      "receipt": {
+        "countersignature": {
+          "stub": "sha-256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "valid": true,
+          "when": "2026-10-25T03:59:01Z"
+        },
+        "approval": {
+          "id": "ap-1",
+          "action": "payments.transfer",
+          "amount": 2500,
+          "unit": "CNY",
+          "with": "svc-pay",
+          "when": "2026-10-25T03:59:00Z",
+          "valid": true,
+          "slip": "sha-256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "details": [
+            {
+              "name": "invoice.pdf",
+              "sha256": "sha-256:1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
+            }
+          ]
+        }
+      },
+      "want": "findings=none,eligible=true,satisfaction=SATISFIED"
+    },
+    {
+      "id": "IZM-COND-002",
+      "name": "required countersignature omitted",
+      "receipt": {
+        "approval": {
+          "id": "ap-1",
+          "action": "payments.transfer",
+          "amount": 2500,
+          "unit": "CNY",
+          "with": "svc-pay",
+          "when": "2026-10-25T03:59:00Z",
+          "valid": true,
+          "slip": "sha-256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "details": [
+            {
+              "name": "invoice.pdf",
+              "sha256": "sha-256:1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
+            }
+          ]
+        }
+      },
+      "want": "findings=countersignature-missing,eligible=false,satisfaction=UNSATISFIED"
+    },
+    {
+      "id": "IZM-COND-003",
+      "name": "amount below the countersignature threshold",
+      "receipt": {
+        "amount": 500,
+        "approval": {
+          "id": "ap-1",
+          "action": "payments.transfer",
+          "amount": 500,
+          "unit": "CNY",
+          "with": "svc-pay",
+          "when": "2026-10-25T03:59:00Z",
+          "valid": true,
+          "slip": "sha-256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "details": [
+            {
+              "name": "invoice.pdf",
+              "sha256": "sha-256:1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
+            }
+          ]
+        }
+      },
+      "want": "findings=none,eligible=true,satisfaction=SATISFIED"
+    },
+    {
+      "id": "IZM-COND-004",
+      "name": "countersignature required but the service has no keys",
+      "permission_with": [
+        {
+          "id": "svc-pay",
+          "has_keys": false
+        }
+      ],
+      "receipt": {
+        "countersignature": {
+          "stub": "sha-256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "valid": true,
+          "when": "2026-10-25T03:59:01Z"
+        },
+        "approval": {
+          "id": "ap-1",
+          "action": "payments.transfer",
+          "amount": 2500,
+          "unit": "CNY",
+          "with": "svc-pay",
+          "when": "2026-10-25T03:59:00Z",
+          "valid": true,
+          "slip": "sha-256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "details": [
+            {
+              "name": "invoice.pdf",
+              "sha256": "sha-256:1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
+            }
+          ]
+        }
+      },
+      "want": "findings=countersignature-not-possible,eligible=false,satisfaction=UNSATISFIED"
+    },
+    {
+      "id": "IZM-COND-005",
+      "name": "required approval omitted",
+      "receipt": {
+        "countersignature": {
+          "stub": "sha-256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "valid": true,
+          "when": "2026-10-25T03:59:01Z"
+        }
+      },
+      "want": "findings=approval-missing,eligible=false,satisfaction=UNSATISFIED"
+    },
+    {
+      "id": "IZM-COND-006",
+      "name": "approval amount does not match the receipt",
+      "receipt": {
+        "countersignature": {
+          "stub": "sha-256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "valid": true,
+          "when": "2026-10-25T03:59:01Z"
+        },
+        "approval": {
+          "id": "ap-1",
+          "action": "payments.transfer",
+          "amount": 999,
+          "unit": "CNY",
+          "with": "svc-pay",
+          "when": "2026-10-25T03:59:00Z",
+          "valid": true,
+          "slip": "sha-256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "details": [
+            {
+              "name": "invoice.pdf",
+              "sha256": "sha-256:1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
+            }
+          ]
+        }
+      },
+      "want": "findings=approval-mismatch,eligible=false,satisfaction=UNSATISFIED"
+    },
+    {
+      "id": "IZM-COND-007",
+      "name": "approval id reused from an earlier line",
+      "prior_approval_ids": [
+        "ap-1"
+      ],
+      "receipt": {
+        "countersignature": {
+          "stub": "sha-256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "valid": true,
+          "when": "2026-10-25T03:59:01Z"
+        },
+        "approval": {
+          "id": "ap-1",
+          "action": "payments.transfer",
+          "amount": 2500,
+          "unit": "CNY",
+          "with": "svc-pay",
+          "when": "2026-10-25T03:59:00Z",
+          "valid": true,
+          "slip": "sha-256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "details": [
+            {
+              "name": "invoice.pdf",
+              "sha256": "sha-256:1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
+            }
+          ]
+        }
+      },
+      "want": "findings=approval-reused,eligible=false,satisfaction=UNSATISFIED"
+    },
+    {
+      "id": "IZM-COND-008",
+      "name": "approval dated more than 300 seconds after the receipt",
+      "receipt": {
+        "countersignature": {
+          "stub": "sha-256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "valid": true,
+          "when": "2026-10-25T03:59:01Z"
+        },
+        "approval": {
+          "id": "ap-1",
+          "action": "payments.transfer",
+          "amount": 2500,
+          "unit": "CNY",
+          "with": "svc-pay",
+          "when": "2026-10-25T04:05:00Z",
+          "valid": true,
+          "slip": "sha-256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "details": [
+            {
+              "name": "invoice.pdf",
+              "sha256": "sha-256:1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
+            }
+          ]
+        }
+      },
+      "want": "findings=approval-dated-after-stub,eligible=false,satisfaction=UNSATISFIED"
+    },
+    {
+      "id": "IZM-COND-009",
+      "name": "approval signature method not implemented",
+      "receipt": {
+        "countersignature": {
+          "stub": "sha-256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "valid": true,
+          "when": "2026-10-25T03:59:01Z"
+        },
+        "approval": {
+          "id": "ap-1",
+          "action": "payments.transfer",
+          "amount": 2500,
+          "unit": "CNY",
+          "with": "svc-pay",
+          "when": "2026-10-25T03:59:00Z",
+          "valid": "unsupported",
+          "slip": "sha-256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "details": [
+            {
+              "name": "invoice.pdf",
+              "sha256": "sha-256:1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
+            }
+          ]
+        }
+      },
+      "want": "findings=approval-unavailable,eligible=false,satisfaction=UNSATISFIED"
+    },
+    {
+      "id": "IZM-COND-010",
+      "name": "receipt after a sound cancellation",
+      "cancellation": {
+        "id": "c1",
+        "when": "2026-10-25T03:30:00Z",
+        "sound": true
+      },
+      "receipt": {
+        "countersignature": {
+          "stub": "sha-256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "valid": true,
+          "when": "2026-10-25T03:59:01Z"
+        },
+        "approval": {
+          "id": "ap-1",
+          "action": "payments.transfer",
+          "amount": 2500,
+          "unit": "CNY",
+          "with": "svc-pay",
+          "when": "2026-10-25T03:59:00Z",
+          "valid": true,
+          "slip": "sha-256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "details": [
+            {
+              "name": "invoice.pdf",
+              "sha256": "sha-256:1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
+            }
+          ]
+        }
+      },
+      "want": "findings=after-cancellation,eligible=false,satisfaction=UNSATISFIED"
+    },
+    {
+      "id": "IZM-COND-011",
+      "name": "cancellation dated after the receipt",
+      "cancellation": {
+        "id": "c1",
+        "when": "2026-10-25T04:10:00Z",
+        "sound": true
+      },
+      "receipt": {
+        "countersignature": {
+          "stub": "sha-256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "valid": true,
+          "when": "2026-10-25T03:59:01Z"
+        },
+        "approval": {
+          "id": "ap-1",
+          "action": "payments.transfer",
+          "amount": 2500,
+          "unit": "CNY",
+          "with": "svc-pay",
+          "when": "2026-10-25T03:59:00Z",
+          "valid": true,
+          "slip": "sha-256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "details": [
+            {
+              "name": "invoice.pdf",
+              "sha256": "sha-256:1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
+            }
+          ]
+        }
+      },
+      "want": "findings=none,eligible=true,satisfaction=SATISFIED"
+    },
+    {
+      "id": "IZM-COND-012",
+      "name": "approval slip does not match the permission",
+      "receipt": {
+        "countersignature": {
+          "stub": "sha-256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "valid": true,
+          "when": "2026-10-25T03:59:01Z"
+        },
+        "approval": {
+          "id": "ap-1",
+          "action": "payments.transfer",
+          "amount": 2500,
+          "unit": "CNY",
+          "with": "svc-pay",
+          "when": "2026-10-25T03:59:00Z",
+          "valid": true,
+          "slip": "sha-256:0000000000000000000000000000000000000000000000000000000000000000",
+          "details": [
+            {
+              "name": "invoice.pdf",
+              "sha256": "sha-256:1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
+            }
+          ]
+        }
+      },
+      "want": "findings=approval-mismatch,eligible=false,satisfaction=UNSATISFIED"
+    },
+    {
+      "id": "IZM-COND-013",
+      "name": "approval details do not match the receipt",
+      "receipt": {
+        "countersignature": {
+          "stub": "sha-256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "valid": true,
+          "when": "2026-10-25T03:59:01Z"
+        },
+        "approval": {
+          "id": "ap-1",
+          "action": "payments.transfer",
+          "amount": 2500,
+          "unit": "CNY",
+          "with": "svc-pay",
+          "when": "2026-10-25T03:59:00Z",
+          "valid": true,
+          "slip": "sha-256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "details": [
+            {
+              "name": "invoice.pdf",
+              "sha256": "sha-256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+            }
+          ]
+        }
+      },
+      "want": "findings=approval-mismatch,eligible=false,satisfaction=UNSATISFIED"
+    }
+  ]
+}

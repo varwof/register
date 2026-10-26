@@ -105,8 +105,8 @@ func main() {
 		want   string
 	}{
 		{"RAR-001", "transfer 3000 CNY", scheme + ":payment:transfer", 3000, "CNY", "allow"},
-		{"RAR-002", "transfer 6000 CNY (above bound)", scheme + ":payment:transfer", 6000, "CNY", "deny"},
-		{"RAR-003", "transfer 3000 USD (not the enum)", scheme + ":payment:transfer", 3000, "USD", "deny"},
+		{"RAR-002", "transfer 6000 CNY (above bound)", scheme + ":payment:transfer", 6000, "CNY", "deny/params_exceed_grant"},
+		{"RAR-003", "transfer 3000 USD (not the enum)", scheme + ":payment:transfer", 3000, "USD", "deny/not_in_enum"},
 		{"RAR-004", "refund 1000 CNY (second action)", scheme + ":payment:refund", 1000, "CNY", "allow"},
 	}
 	for _, c := range cases {
@@ -125,7 +125,7 @@ func main() {
 			got += "/" + dec.Reason
 		}
 		status := "PASS"
-		if dec.Verdict != c.want {
+		if got != c.want {
 			status = "FAIL"
 		}
 		fmt.Printf("%s %s %-36s want=%s got=%s\n", status, c.caseID, c.name, c.want, got)

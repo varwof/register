@@ -103,6 +103,7 @@ func (e *emiliaAEC) Project(raw []byte, ctx Context) (ProjectedView, error) {
 		return ProjectedView{}, fmt.Errorf("unsupported AEC content: %s", strings.Join(unknown, "; "))
 	}
 	var nativeChecks []string
+	var requiredCheckIDs []string
 
 	roles := make([]string, 0, len(a.FreshnessSec))
 	for r := range a.FreshnessSec {
@@ -138,10 +139,13 @@ func (e *emiliaAEC) Project(raw []byte, ctx Context) (ProjectedView, error) {
 		})
 	}
 	for _, r := range a.StatusRequired {
-		if r == "" {
-			return ProjectedView{}, fmt.Errorf("AEC status_required contains an empty role")
+		// A status check runs over a component type, so the same relying-party
+		// pin applies: an unpinned type is a refusal, not a free-form check id.
+		if _, err := pinnedRole(ctx.RoleMap, r); err != nil {
+			return ProjectedView{}, fmt.Errorf("AEC status_required: %w", err)
 		}
 		nativeChecks = append(nativeChecks, "status_required:"+r)
+		requiredCheckIDs = append(requiredCheckIDs, "status_required:"+r)
 	}
 	expressionParts := []string{"(" + a.Expression + ")"}
 	seenBindings := make(map[string]bool, len(a.RequiredBindings))
@@ -200,6 +204,7 @@ func (e *emiliaAEC) Project(raw []byte, ctx Context) (ProjectedView, error) {
 		Facts:                      []semantics.EvidenceFact{},
 		Residuals:                  residual,
 		RequiredNativeChecks:       nativeChecks,
+		RequiredCheckIDs:           requiredCheckIDs,
 		Meta:                       meta,
 	}, nil
 }

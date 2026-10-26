@@ -1,0 +1,58 @@
+{
+  "@version": "clc-izmaylov-log-inclusion-fixture-v1",
+  "note": "Synthetic log-inclusion fixture for draft-izmaylov-agent-permission-receipts-00 §9.2/§10.1. The proof is a real SHA-256 Merkle path over four synthetic leaves; verification is executed, not modelled.",
+  "now": "2026-10-25T05:00:00Z",
+  "subject": "user:alice@example.org",
+  "verifier": "izmaylov-native-verifier/1",
+  "verifier_profile_digest": "sha-256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "trust_snapshot_digest": "sha-256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+  "status_snapshot_digest": "sha-256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+  "profile_digest": "sha-256:9999999999999999999999999999999999999999999999999999999999999999",
+  "tree_head": {
+    "root": "sha-256:476c4a255bbaa3fa397182c77cb1bc85be71aa10349349f67e5c2bdd0453bfa0",
+    "tree_size": 4
+  },
+  "leaf": "sha-256:649837ddcb7e1967086d7d35aaef7b975c513815d96fc6e70015e93a2bfe0f9a",
+  "proof": [
+    {"side": "right", "hash": "sha-256:9fde56c376760bd399b82eb8569229a2dff19219411ac71154dfeab2cf502454"},
+    {"side": "left", "hash": "sha-256:8b0f563106070048a1057926820c7118dec20b8a73715544f4528487c16dc0d7"}
+  ],
+  "residuals": [
+    "log append-only consistency proofs between tree heads are not modelled",
+    "tree-head signature verification belongs to stage 1",
+    "Merkle tree shape/leaf ordering is pinned by this fixture; the draft leaves the log's construction to the log operator"
+  ],
+  "cases": [
+    {
+      "id": "IZM-LOG-001",
+      "name": "inclusion proof verifies against the signed root",
+      "want": "findings=none,eligible=true,satisfaction=SATISFIED"
+    },
+    {
+      "id": "IZM-LOG-002",
+      "name": "leaf digest does not belong to this tree",
+      "leaf": "sha-256:d2dbf006f96dd05044a8f63d8f118f23925ba4cc5750f8b6c8e287fd506c8188",
+      "want": "findings=inclusion-mismatch,eligible=false,satisfaction=UNSATISFIED"
+    },
+    {
+      "id": "IZM-LOG-003",
+      "name": "proof verifies but the tree-head root differs",
+      "tree_head_root": "sha-256:0000000000000000000000000000000000000000000000000000000000000000",
+      "want": "findings=inclusion-mismatch,eligible=false,satisfaction=UNSATISFIED"
+    },
+    {
+      "id": "IZM-LOG-004",
+      "name": "inclusion proof not supplied",
+      "proof": [],
+      "want": "findings=inclusion-unavailable,eligible=false,satisfaction=UNSATISFIED"
+    },
+    {
+      "id": "IZM-LOG-005",
+      "name": "proof path has an invalid side",
+      "proof": [
+        {"side": "up", "hash": "sha-256:9fde56c376760bd399b82eb8569229a2dff19219411ac71154dfeab2cf502454"}
+      ],
+      "want": "findings=inclusion-invalid,eligible=false,satisfaction=UNSATISFIED"
+    }
+  ]
+}
