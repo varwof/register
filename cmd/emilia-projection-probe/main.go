@@ -41,13 +41,13 @@ func digestJSON(v any) string {
 }
 
 type bindingFixture struct {
-	RequirementID string           `json:"requirement_id"`
-	Relation      string           `json:"relation"`
-	Source        map[string]any   `json:"source"`
-	Targets       []map[string]any `json:"targets"`
-	Action        map[string]any   `json:"action"`
-	Status        map[string]any   `json:"status"`
-	Trust         map[string]any   `json:"trust"`
+	RequirementDigest string           `json:"requirement_digest"`
+	Relation          string           `json:"relation"`
+	Source            map[string]any   `json:"source"`
+	Targets           []map[string]any `json:"targets"`
+	Action            map[string]any   `json:"action"`
+	Status            map[string]any   `json:"status"`
+	Trust             map[string]any   `json:"trust"`
 }
 
 type bindingMutation struct {
@@ -153,8 +153,8 @@ func (f bindingFixture) tuple() map[string]any {
 	sort.Strings(subjects)
 	sort.Strings(issuedAt)
 	return map[string]any{
-		"requirement_id":    f.RequirementID,
-		"policy_generation": f.Source["policy_generation"],
+		"requirement_digest": f.RequirementDigest,
+		"policy_generation":  f.Source["policy_generation"],
 		"from": map[string]any{
 			"type":            f.Source["type"],
 			"artifact_digest": digestJSON(f.Source),
