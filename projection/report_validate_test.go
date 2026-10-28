@@ -344,3 +344,30 @@ func TestBuildRejectsProfileInventoryMismatch(t *testing.T) {
 		t.Fatalf("mismatched inventory error = %v, want %s", err, projection.CodeReportProfile)
 	}
 }
+
+// Completeness is required by default: an incomplete report must be refused
+// unless the caller explicitly accepts it.
+func TestVerifyRequiresCompletenessByDefault(t *testing.T) {
+	now := time.Date(2026, 10, 25, 1, 0, 0, 0, time.UTC)
+	req := reportRequirementValue(t)
+	report, err := projection.BuildEvidenceReport(projection.EvidenceInputs{
+		ProjectorID:      "test/projector",
+		Requirement:      &req,
+		Facts:            []semantics.EvidenceFact{},
+		RequiredCheckIDs: []string{"native:approval"},
+		Now:              now,
+	})
+	if err != nil {
+		t.Fatalf("build: %v", err)
+	}
+	if report.NativeChecksComplete {
+		t.Fatal("test precondition: report should be incomplete")
+	}
+	err = projection.VerifyEvidenceReport(report, projection.ReportPolicy{})
+	if err == nil || !strings.Contains(err.Error(), projection.CodeReportIncomplete) {
+		t.Fatalf("incomplete report passed the default policy: %v", err)
+	}
+	if err := projection.VerifyEvidenceReport(report, projection.ReportPolicy{AllowIncomplete: true}); err != nil {
+		t.Fatalf("explicit AllowIncomplete should accept: %v", err)
+	}
+}

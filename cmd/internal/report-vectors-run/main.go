@@ -25,6 +25,7 @@ import (
 type vectorPolicy struct {
 	RequireProfile         bool                         `json:"requireProfile"`
 	RequireComplete        bool                         `json:"requireComplete"`
+	AllowIncomplete        bool                         `json:"allowIncomplete"`
 	RequireSnapshotBinding bool                         `json:"requireSnapshotBinding"`
 	RequireReplay          bool                         `json:"requireReplay"`
 	MinAssurance           string                       `json:"minAssurance"`
@@ -58,6 +59,7 @@ func (v vector) policy() projection.ReportPolicy {
 	policy := projection.ReportPolicy{
 		RequireProfile:         v.Policy.RequireProfile,
 		RequireComplete:        v.Policy.RequireComplete,
+		AllowIncomplete:        v.Policy.AllowIncomplete,
 		RequireSnapshotBinding: v.Policy.RequireSnapshotBinding,
 		RequireReplay:          v.Policy.RequireReplay,
 		MinAssurance:           projection.AssuranceLevel(v.Policy.MinAssurance),

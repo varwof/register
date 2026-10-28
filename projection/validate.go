@@ -290,8 +290,16 @@ func (v VerifierIdentity) Validate() error {
 type ReportPolicy struct {
 	// RequireProfile rejects a report that does not embed a profile.
 	RequireProfile bool
-	// RequireComplete rejects a report whose native-check report is incomplete.
+	// RequireComplete is retained for callers that set it explicitly.
+	//
+	// Deprecated: completeness is required by default; use AllowIncomplete to
+	// opt out.  A report with nativeChecksComplete=false is refused unless the
+	// caller explicitly accepts an incomplete assessment.
 	RequireComplete bool
+	// AllowIncomplete accepts a report whose native-check report is incomplete.
+	// The default is to refuse: a satisfied verdict next to a missing required
+	// native check is exactly the case a consumer is most likely to misread.
+	AllowIncomplete bool
 	// Roots are the trust anchors a report signer must chain to.  Empty means
 	// no signature can be verified; a caller that wants an unsigned report uses
 	// ValidateEvidenceReport instead.
@@ -621,7 +629,7 @@ func VerifyEvidenceReport(rep *Report, policy ReportPolicy) error {
 		return reportFail(CodeReportIncomplete,
 			"profile %q requires native checks but the report is incomplete", rep.Profile.ID)
 	}
-	if policy.RequireComplete && !rep.NativeChecksComplete {
+	if !rep.NativeChecksComplete && !policy.AllowIncomplete {
 		return reportFail(CodeReportIncomplete, "native checks are incomplete")
 	}
 	// Lifecycle policy must not be silently ignored on the unsigned path.
