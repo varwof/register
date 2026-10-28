@@ -23,11 +23,16 @@ jobs:
         with:
           go-version-file: go.mod
 
+      # The corpus suites live on Linux: clc-conformance runs them with the
+      # Python and TypeScript probes checked out.  The other matrix entries keep
+      # the unit and race coverage; they are not the semantic gate.
       - name: Fetch CLC corpora (no silent skips)
+        if: runner.os == 'Linux'
         shell: bash
         run: |
           set -euo pipefail
           git clone --depth 1 https://github.com/varwof/capability.git ../capability
+          git clone --depth 1 https://github.com/varwof/aic-capability-demo.git ../aic-capability-demo
           missing=0
           for f in \
             data/_vectors/clc-v1/vectors.json \
@@ -68,6 +73,9 @@ jobs:
 
       - name: Test
         shell: bash
+        env:
+          CLC_PY_DIR: ${{ github.workspace }}/../aic-capability-demo
+          CLC_TS_DIR: ${{ github.workspace }}/../aic-capability-demo/ts
         run: go test -v -race -covermode=atomic -coverprofile=coverage.out ./...
 
       - name: Upload coverage
