@@ -1,7 +1,7 @@
 {
   "@version": "clc-emilia-binding-fixture-v1",
   "now": "2026-09-13T12:00:00Z",
-  "expected_subject": "A6_5Bwc-GmIae26cYpJijlLIbM1UTLEtRTmMmraayUI",
+  "expected_subject": "wy00iyR8vT7-WXT-kVbBJjVW16FINmmvDmhy2FGO5hY",
   "binding_role": "clc:evidence-binding:AAAADXBvbGljeS1wZXJtaXQAAAAHcGVybWl0cwAAAAllcC1xdW9ydW0",
   "native_checks": {
     "check_id": "status_required:ep-quorum",
@@ -344,7 +344,16 @@
       "verifier_profile_digest": "sha-256:3f1c2d6a1b0e5c9d7a4f8b2e6c1d9a3f5b7e0c2d4a6f8b1e3c5d7a9f0b2e4c6d"
     },
     "relation": "permits",
-    "requirement_digest": "sha-256:c55a4dae12bfdc8e283d0006ee71cedf5acf04447380b628af490f8f66d3c3fc"
+    "requirement_digest": "sha-256:c55a4dae12bfdc8e283d0006ee71cedf5acf04447380b628af490f8f66d3c3fc",
+    "trust_inputs": {
+      "anchors": [
+        "native-verifier-root-2026"
+      ],
+      "revocation_source": "aeb-status",
+      "revocation_generation": "rev-42",
+      "verifier_profile": "emilia-native-trust-v1"
+    },
+    "trust_snapshot_digest": "sha-256:06d09b694b38fe8ba1bf691f66f277184b830a26f5657d1a0444f4766bd851ce"
   },
   "mutations": {
     "source": {

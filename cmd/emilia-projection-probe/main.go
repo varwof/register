@@ -37,17 +37,19 @@ func digestJSON(v any) string {
 		panic(err)
 	}
 	sum := sha256.Sum256(raw)
-	return "sha256:" + hex.EncodeToString(sum[:])
+	return "sha-256:" + hex.EncodeToString(sum[:])
 }
 
 type bindingFixture struct {
-	RequirementDigest string           `json:"requirement_digest"`
-	Relation          string           `json:"relation"`
-	Source            map[string]any   `json:"source"`
-	Targets           []map[string]any `json:"targets"`
-	Action            map[string]any   `json:"action"`
-	Status            map[string]any   `json:"status"`
-	Trust             map[string]any   `json:"trust"`
+	RequirementDigest   string           `json:"requirement_digest"`
+	Relation            string           `json:"relation"`
+	Source              map[string]any   `json:"source"`
+	Targets             []map[string]any `json:"targets"`
+	Action              map[string]any   `json:"action"`
+	Status              map[string]any   `json:"status"`
+	Trust               map[string]any   `json:"trust"`
+	TrustInputs         map[string]any   `json:"trust_inputs"`
+	TrustSnapshotDigest string           `json:"trust_snapshot_digest"`
 }
 
 type bindingMutation struct {
@@ -100,10 +102,10 @@ type nativeCheckFixture struct {
 	} `json:"cases"`
 }
 
-// reportDigest renders a fixture object as the report's canonical typed digest
-// (sha-256:<hex>).  digestJSON keeps its "sha256:<hex>" spelling because the
-// relation tuple it feeds is a cross-language object shared with the Python and
-// TypeScript probes; the two layers must not silently share one convention.
+// reportDigest renders a fixture object as the profile's typed digest.  The
+// profile pins "sha-256:<hex>" because that is the CLC representation; AEC-08
+// writes the same algorithm as "sha256:<hex>" and the profile normalizes the
+// spelling, without re-hashing, at the boundary.
 func reportDigest(v any) projection.Digest {
 	raw, err := semantics.CanonicalJSON(v)
 	if err != nil {
@@ -132,7 +134,17 @@ func loadBindingFixture() bindingFixtureDocument {
 }
 
 func baseBindingFixture() bindingFixture {
-	return loadBindingFixture().Binding
+	f := loadBindingFixture().Binding
+	raw, err := semantics.CanonicalJSON(f.TrustInputs)
+	if err != nil {
+		panic(err)
+	}
+	sum := sha256.Sum256(raw)
+	want := "sha-256:" + hex.EncodeToString(sum[:])
+	if want != f.TrustSnapshotDigest {
+		panic("trust_snapshot_digest does not match trust_inputs")
+	}
+	return f
 }
 
 func fixtureNow() time.Time {
@@ -164,12 +176,13 @@ func (f bindingFixture) tuple() map[string]any {
 			"type":                f.Targets[0]["type"],
 			"artifact_set_digest": digestJSON(f.Targets),
 		},
-		"action_digest":      digestJSON(f.Action),
-		"subjects":           subjects,
-		"trust":              f.Trust,
-		"status_digest":      digestJSON(f.Status),
-		"status_snapshot":    f.Status,
-		"evidence_issued_at": issuedAt,
+		"action_digest":         digestJSON(f.Action),
+		"subjects":              subjects,
+		"trust":                 f.Trust,
+		"trust_snapshot_digest": f.TrustSnapshotDigest,
+		"status_digest":         digestJSON(f.Status),
+		"status_snapshot":       f.Status,
+		"evidence_issued_at":    issuedAt,
 	}
 }
 
