@@ -23,6 +23,37 @@ jobs:
         with:
           go-version-file: go.mod
 
+      - name: Fetch CLC corpora (no silent skips)
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --depth 1 https://github.com/varwof/capability.git ../capability
+          missing=0
+          for f in \
+            data/_vectors/clc-v1/vectors.json \
+            data/_vectors/clc-v1/property-cases.json \
+            data/_vectors/clc-v1/evidence-vectors.json \
+            data/_vectors/clc-v1/crosswalk-vectors.json \
+            data/_vectors/clc-v1/profile-declarations.json \
+            data/_vectors/clc-v1/resolve-vectors.json \
+            data/_vectors/clc-v1/scheme-declaration-vectors.json \
+            data/_vectors/clc-v1/quantity-vectors.json \
+            data/_vectors/clc-v1/string-domain-vectors.json \
+            data/_vectors/clc-v1/offline-vectors.json \
+            data/_vectors/clc-v1/param-bounds-meet-property-cases.json \
+            data/_vectors/clc-d/containment-vectors.json \
+            data/_vectors/clc-d/containment-property-cases.json \
+            data/_vectors/clc-d/containment-crosswalk-vectors.json \
+            data/_vectors/clc-d/authorize-crosswalk-vectors.json \
+            data/_vectors/clc-d/authorize-chain-vectors.json \
+            data/_vectors/clc-d/reason-collapse-vectors.json \
+            data/_vectors/catalog-v1/catalog-vectors.json \
+            data/_vectors/scheme-admin-v1/bootstrap.json \
+            data/_vectors/scheme-admin-v1/scheme-admin-vectors.json ; do
+            [ -f "../capability/$f" ] || { echo "::error::missing ../capability/$f"; missing=1; }
+          done
+          exit "$missing"
+
       - name: Verify go.mod is tidy
         run: |
           go mod tidy

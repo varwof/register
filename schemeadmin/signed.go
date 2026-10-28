@@ -125,7 +125,11 @@ func ConfirmSigned(c SignedConfirmation) (res ConfirmationResult, err error) {
 		res.TransitionDigest = d
 	}
 	if op, err := BuildManagementOperation(pkg, tr); err == nil {
-		res.ManagementOperationDigest, _ = OperationDigest(op)
+		digest, derr := OperationDigest(op)
+		if derr != nil {
+			return res, fail(CodePackageShape, "management operation digest: %s", derr)
+		}
+		res.ManagementOperationDigest = digest
 	}
 
 	// A publisher candidate must bind package.publisher through its AIC.  Keep

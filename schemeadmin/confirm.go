@@ -65,10 +65,18 @@ func confirm(c Confirmation) (ConfirmationResult, error) {
 		res.RegistryStateDigest = d
 	}
 	if op, err := BuildManagementOperation(c.Package, c.Transition); err == nil {
-		res.ManagementOperationDigest, _ = OperationDigest(op)
+		digest, derr := OperationDigest(op)
+		if derr != nil {
+			return res, fail(CodePackageShape, "management operation digest: %s", derr)
+		}
+		res.ManagementOperationDigest = digest
 	}
 	if op, err := BuildApprovalOperation(c.Package, c.Transition); err == nil {
-		res.ApprovalOperationDigest, _ = OperationDigest(op)
+		digest, derr := OperationDigest(op)
+		if derr != nil {
+			return res, fail(CodePackageShape, "approval operation digest: %s", derr)
+		}
+		res.ApprovalOperationDigest = digest
 	}
 
 	err = decide(c, &res, now)
