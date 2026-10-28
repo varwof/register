@@ -173,6 +173,38 @@ func (s RegistryState) Accept(c Catalog, res Result) (RegistryState, error) {
 	if !res.signatureVerified || res.Verdict != VerdictAccept {
 		return s, fail(CodeStateUnverified, "state can only be advanced from a VerifySigned accept result")
 	}
+	return s.advance(c, res)
+}
+
+// AcceptDelta returns the state a deployer persists after applying a verified
+// signed delta whose result binds c.
+//
+// A delta signature covers the delta bytes, not the catalogue it produces, so
+// Accept refuses a delta result by design.  This method performs the extra
+// binding that a delta needs and nothing else: the delta's base must be the
+// accepted head, and the result must bind the catalogue it produced (the shared
+// advance path re-checks digest, generation and producer).  Identity,
+// generation continuity, previous_digest and history are the same code path as
+// Accept, so a delta cannot be used to skip the rollback rules.
+func (s RegistryState) AcceptDelta(base, c Catalog, res Result) (RegistryState, error) {
+	if !res.deltaVerified || res.Verdict != VerdictAccept {
+		return s, fail(CodeStateUnverified, "state can only be advanced from a verified delta result")
+	}
+	baseDigest, err := base.Digest()
+	if err != nil {
+		return s, err
+	}
+	if s.Generation == 0 || base.Generation != s.Generation || baseDigest != s.Digest {
+		return s, fail(CodeRollback, "delta base %d/%s is not the accepted head %d/%s",
+			base.Generation, baseDigest, s.Generation, s.Digest)
+	}
+	return s.advance(c, res)
+}
+
+// advance is the state transition shared by Accept and AcceptDelta.  Callers
+// are responsible for establishing that res is bound to c: Accept requires a
+// catalogue signature, AcceptDelta requires the delta base to be the head.
+func (s RegistryState) advance(c Catalog, res Result) (RegistryState, error) {
 	if err := c.Validate(); err != nil {
 		return s, err
 	}

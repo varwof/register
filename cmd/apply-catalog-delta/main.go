@@ -10,12 +10,13 @@
 //
 //	apply-catalog-delta -catalog base.json -delta delta.json -signature delta.p7s
 //	                   -state accepted-state.json -trust roots.pem -policy policy.json
-//	                   [-out next.json] [-force]
+//	                   [-out next.json] [-state-out next-state.json] [-force]
 //
 // Exit status: 0 applied, 2 refused, 1 usage or I/O failure.
 package main
 
 import (
+	"encoding/json"
 	"encoding/pem"
 	"flag"
 	"fmt"
@@ -33,11 +34,12 @@ func main() {
 	trustPath := flag.String("trust", "", "trust anchor PEM bundle")
 	policyPath := flag.String("policy", "", "deployer trust policy JSON")
 	out := flag.String("out", "", "output catalog (default: print the digest only)")
+	stateOut := flag.String("state-out", "", "write the advanced registry state (rollback protection)")
 	force := flag.Bool("force", false, "replace an existing output file")
 	flag.Parse()
 
 	if *catalogPath == "" || *deltaPath == "" || *signaturePath == "" || *statePath == "" || *trustPath == "" || *policyPath == "" {
-		fmt.Fprintln(os.Stderr, "usage: apply-catalog-delta -catalog base.json -delta delta.json -signature delta.p7s -state accepted-state.json -trust roots.pem -policy policy.json [-out next.json] [-force]")
+		fmt.Fprintln(os.Stderr, "usage: apply-catalog-delta -catalog base.json -delta delta.json -signature delta.p7s -state accepted-state.json -trust roots.pem -policy policy.json [-out next.json] [-state-out next-state.json] [-force]")
 		os.Exit(1)
 	}
 
@@ -81,7 +83,7 @@ func main() {
 		os.Exit(2)
 	}
 
-	_, next, err := catalog.VerifySignedDeltaWithState(deltaRaw, block.Bytes, *base, roots, policy, state)
+	res, next, err := catalog.VerifySignedDeltaWithState(deltaRaw, block.Bytes, *base, roots, policy, state)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "apply-catalog-delta: %v\n", err)
 		os.Exit(2)
@@ -98,6 +100,24 @@ func main() {
 			os.Exit(1)
 		}
 		if err := catalog.WriteFile(*out, raw, *force); err != nil {
+			fmt.Fprintf(os.Stderr, "apply-catalog-delta: %v\n", err)
+			os.Exit(1)
+		}
+	}
+	if *stateOut != "" {
+		// AcceptDelta re-checks that the delta's base is the accepted head and
+		// then applies the same rollback/history rules as a full catalog.
+		advanced, err := state.AcceptDelta(*base, *next, res)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "apply-catalog-delta: %v\n", err)
+			os.Exit(2)
+		}
+		raw, err := json.MarshalIndent(advanced, "", "  ")
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "apply-catalog-delta: %v\n", err)
+			os.Exit(1)
+		}
+		if err := catalog.WriteFile(*stateOut, append(raw, '\n'), *force); err != nil {
 			fmt.Fprintf(os.Stderr, "apply-catalog-delta: %v\n", err)
 			os.Exit(1)
 		}

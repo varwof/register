@@ -33,17 +33,43 @@ func TestDirectoryBundleDeltaAndSnapshotFallback(t *testing.T) {
 		Snapshot: gen2Raw, SnapshotSignature: gen2Sig,
 		Delta: deltaRaw, DeltaSignature: deltaSig,
 	}
-	res, next, usedDelta, err := bundle.Apply(*gen1, f.rootsFor("ca"), f.policy["standard"], state)
-	if err != nil || res.Verdict != catalog.VerdictAccept || !usedDelta || next.Generation != 2 {
-		t.Fatalf("delta apply: %v used=%v res=%+v", err, usedDelta, res)
+	out, err := bundle.Apply(*gen1, f.rootsFor("ca"), f.policy["standard"], state)
+	if err != nil || out.Result.Verdict != catalog.VerdictAccept || !out.UsedDelta ||
+		out.Catalog.Generation != 2 || out.State.Generation != 2 || out.DeltaError != "" {
+		t.Fatalf("delta apply: %v used=%v res=%+v state=%+v deltaErr=%q",
+			err, out.UsedDelta, out.Result, out.State, out.DeltaError)
 	}
 
 	// A delta that cannot be applied falls back to the signed full snapshot.
 	fallback := bundle
 	fallback.DeltaSignature = nil
-	res, next, usedDelta, err = fallback.Apply(*gen1, f.rootsFor("ca"), f.policy["standard"], state)
-	if err != nil || res.Verdict != catalog.VerdictAccept || usedDelta || next.Generation != 2 {
-		t.Fatalf("snapshot fallback: %v used=%v res=%+v", err, usedDelta, res)
+	out, err = fallback.Apply(*gen1, f.rootsFor("ca"), f.policy["standard"], state)
+	if err != nil || out.Result.Verdict != catalog.VerdictAccept || out.UsedDelta ||
+		out.Catalog.Generation != 2 || out.State.Generation != 2 || out.DeltaError == "" {
+		t.Fatalf("snapshot fallback: %v used=%v res=%+v state=%+v deltaErr=%q",
+			err, out.UsedDelta, out.Result, out.State, out.DeltaError)
+	}
+
+	// A delta whose base is not the accepted head must not advance the state,
+	// even when the delta itself verifies.
+	res, next, err := catalog.VerifySignedDeltaWithState(deltaRaw, deltaSig, *gen1, f.rootsFor("ca"), f.policy["standard"], state)
+	if err != nil {
+		t.Fatalf("delta verify: %v", err)
+	}
+	if _, err := f.corpus.States["gen2"].AcceptDelta(*gen1, *next, res); catalog.CodeOf(err) != catalog.CodeRollback {
+		t.Fatalf("stale delta base: want %s, got %v", catalog.CodeRollback, err)
+	}
+
+	// A caller-supplied Result must not advance the state: only a result that
+	// VerifySignedDelta produced carries deltaVerified, and that flag is not
+	// reachable from outside the package.
+	digest, err := next.Digest()
+	if err != nil {
+		t.Fatalf("next digest: %v", err)
+	}
+	forged := catalog.Result{Verdict: catalog.VerdictAccept, CatalogDigest: digest, Generation: next.Generation, Producer: next.Producer}
+	if _, err := state.AcceptDelta(*gen1, *next, forged); catalog.CodeOf(err) != catalog.CodeStateUnverified {
+		t.Fatalf("forged delta result: want %s, got %v", catalog.CodeStateUnverified, err)
 	}
 
 	server := httptest.NewServer(bundle.Handler())

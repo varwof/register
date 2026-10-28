@@ -164,6 +164,7 @@ func VerifySignedDelta(raw, signature []byte, base Catalog, roots []*x509.Certif
 		res.InputsDigest = dg
 	}
 	res.Verdict = VerdictAccept
+	res.deltaVerified = true
 	return res, next, nil
 }
 

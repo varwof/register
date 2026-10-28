@@ -62,6 +62,13 @@ type Result struct {
 	// signatureVerified is set only by VerifySigned after the detached
 	// signature over the exact raw catalog verified.  State writers require it.
 	signatureVerified bool
+
+	// deltaVerified is set only by VerifySignedDelta* after the detached
+	// signature over the delta verified and the delta was applied to a base
+	// whose digest the result binds.  AcceptDelta requires it, because a delta
+	// signature is not a catalogue signature and must not be able to reuse
+	// signatureVerified.
+	deltaVerified bool
 }
 
 // Verify is retained only as a fail-closed compatibility stub.  Use
