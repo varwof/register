@@ -21,6 +21,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/varwof/register"
 	"github.com/varwof/register/catalog"
@@ -35,6 +36,7 @@ func main() {
 	policyPath := flag.String("policy", "", "deployer trust policy JSON")
 	out := flag.String("out", "", "output catalog (default: print the digest only)")
 	stateOut := flag.String("state-out", "", "write the advanced registry state (rollback protection)")
+	allowStale := flag.Bool("allow-stale-clock", false, "accept a policy observed_at far from the wall clock (offline replay)")
 	force := flag.Bool("force", false, "replace an existing output file")
 	flag.Parse()
 
@@ -73,6 +75,9 @@ func main() {
 		os.Exit(1)
 	}
 	policy, err := catalog.LoadPolicy(*policyPath)
+	if err == nil && !*allowStale {
+		err = register.CheckObservedAt(policy.ObservedAt, time.Now().UTC())
+	}
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "apply-catalog-delta: %v\n", err)
 		os.Exit(2)

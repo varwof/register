@@ -29,8 +29,10 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"time"
 
 	"github.com/varwof/register"
+	"github.com/varwof/register/catalog"
 	"github.com/varwof/register/schemeadmin"
 )
 
@@ -101,6 +103,7 @@ type commonFlags struct {
 	statePath    string
 	stateOut     string
 	declOnlyPath string
+	allowStale   bool
 }
 
 func addCommon(fs *flag.FlagSet, c *commonFlags) {
@@ -120,6 +123,7 @@ func addCommon(fs *flag.FlagSet, c *commonFlags) {
 	fs.StringVar(&c.policyPath, "policy", "", "deployer trust policy JSON")
 	fs.StringVar(&c.statePath, "state", "", "local registry state JSON (optional)")
 	fs.StringVar(&c.stateOut, "state-out", "", "write the accepted registry state here (optional)")
+	fs.BoolVar(&c.allowStale, "allow-stale-clock", false, "accept a policy observed_at far from the wall clock (offline replay)")
 }
 
 func runConfirm(args []string, wantAction string) (bool, error) {
@@ -170,6 +174,11 @@ func runConfirm(args []string, wantAction string) (bool, error) {
 	policy, err := loadPolicy(c.policyPath)
 	if err != nil {
 		return true, err
+	}
+	if !c.allowStale {
+		if err := register.CheckObservedAt(policy.ObservedAt, time.Now().UTC()); err != nil {
+			return true, err
+		}
 	}
 	state, err := loadState(c.statePath)
 	if err != nil {
@@ -230,7 +239,7 @@ func runConfirm(args []string, wantAction string) (bool, error) {
 		if err != nil {
 			return false, err
 		}
-		if err := os.WriteFile(c.stateOut, append(raw, '\n'), 0o644); err != nil {
+		if err := catalog.WriteStateFile(c.stateOut, append(raw, '\n'), true); err != nil {
 			return false, err
 		}
 	}
@@ -274,6 +283,7 @@ func runDelegation(args []string) (bool, error) {
 	fs := flag.NewFlagSet("delegation", flag.ContinueOnError)
 	path := fs.String("delegation", "", "delegation JSON")
 	policyPath := fs.String("policy", "", "deployer trust policy JSON")
+	allowStale := fs.Bool("allow-stale-clock", false, "accept a policy observed_at far from the wall clock (offline replay)")
 	sigPath := fs.String("signature", "", "detached PKCS#7 delegation signature (PEM)")
 	trustPath := fs.String("trust", "", "trust anchor PEM bundle")
 	if err := fs.Parse(args); err != nil {
@@ -297,6 +307,11 @@ func runDelegation(args []string) (bool, error) {
 	policy, err := loadPolicy(*policyPath)
 	if err != nil {
 		return true, err
+	}
+	if !*allowStale {
+		if err := register.CheckObservedAt(policy.ObservedAt, time.Now().UTC()); err != nil {
+			return true, err
+		}
 	}
 	if err := schemeadmin.ValidateSignedDelegation(raw, signature, roots, policy); err != nil {
 		fmt.Printf("reject %s\n", schemeadmin.CodeOf(err))

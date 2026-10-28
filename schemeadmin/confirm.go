@@ -259,6 +259,9 @@ func verifyCertificate(cert *x509.Certificate, roots []*x509.Certificate, now ti
 			pool.AddCert(r)
 		}
 	}
+	if cert.KeyUsage != 0 && cert.KeyUsage&x509.KeyUsageDigitalSignature == 0 {
+		return nil, fail(CodeSignatureChain, "signer certificate key usage does not permit digital signatures")
+	}
 	if _, err := cert.Verify(x509.VerifyOptions{
 		Roots:       pool,
 		KeyUsages:   []x509.ExtKeyUsage{x509.ExtKeyUsageAny},

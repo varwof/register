@@ -133,7 +133,7 @@ func TestCheckAcceptsValidCreate(t *testing.T) {
 		"supported_clc_revisions": []string{"CLC-1.19"},
 		"namespace_prefixes":      []string{"/std"},
 		"max_major":               3,
-		"observed_at":             "2026-10-22T00:00:00Z",
+		"observed_at":             time.Now().UTC().Format(time.RFC3339),
 	}
 	policyPath := write("policy.json", mustJSON(t, policy))
 

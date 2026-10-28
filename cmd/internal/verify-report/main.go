@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/varwof/register"
+	"github.com/varwof/register/catalog"
 	"github.com/varwof/register/projection"
 	"github.com/varwof/register/semantics"
 )
@@ -196,7 +197,7 @@ func main() {
 			fmt.Fprintf(os.Stderr, "encode state: %v\n", err)
 			os.Exit(1)
 		}
-		if err := os.WriteFile(*stateOut, append(encoded, '\n'), 0o644); err != nil {
+		if err := catalog.WriteStateFile(*stateOut, append(encoded, '\n'), true); err != nil {
 			fmt.Fprintf(os.Stderr, "write state: %v\n", err)
 			os.Exit(1)
 		}

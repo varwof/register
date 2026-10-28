@@ -94,6 +94,17 @@ func CanonicalBytes(c Catalog) ([]byte, error) {
 // fsyncs it and atomically links/renames it into place, so a crash cannot
 // leave a partially written immutable artifact.
 func WriteFile(path string, raw []byte, replace bool) error {
+	return writeFileMode(path, raw, replace, 0o644)
+}
+
+// WriteStateFile writes a registry/snapshot state file: same atomic replace as
+// WriteFile, but 0600 because the state is the local rollback anchor and does
+// not need to be readable by other local users.
+func WriteStateFile(path string, raw []byte, replace bool) error {
+	return writeFileMode(path, raw, replace, 0o600)
+}
+
+func writeFileMode(path string, raw []byte, replace bool, mode os.FileMode) error {
 	dir := filepath.Dir(path)
 	f, err := os.CreateTemp(dir, ".artifact-*")
 	if err != nil {
@@ -109,7 +120,7 @@ func WriteFile(path string, raw []byte, replace bool) error {
 		f.Close()
 		return err
 	}
-	if err := f.Chmod(0o644); err != nil {
+	if err := f.Chmod(mode); err != nil {
 		f.Close()
 		return err
 	}

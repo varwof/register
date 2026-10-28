@@ -21,6 +21,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/varwof/register"
 	"github.com/varwof/register/catalog"
@@ -33,6 +34,7 @@ func main() {
 	policyPath := flag.String("policy", "", "deployer policy JSON")
 	statePath := flag.String("state", "", "accepted-generation state JSON (optional)")
 	stateOut := flag.String("state-out", "", "write the advanced state here on accept")
+	allowStale := flag.Bool("allow-stale-clock", false, "accept a policy observed_at far from the wall clock (offline replay)")
 	flag.Parse()
 
 	if *catalogPath == "" || *sigPath == "" || *trustPath == "" || *policyPath == "" {
@@ -56,6 +58,9 @@ func main() {
 		os.Exit(1)
 	}
 	policy, err := catalog.LoadPolicy(*policyPath)
+	if err == nil && !*allowStale {
+		err = register.CheckObservedAt(policy.ObservedAt, time.Now().UTC())
+	}
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "verify-catalog: %v\n", err)
 		os.Exit(1)
@@ -89,7 +94,7 @@ func main() {
 			fmt.Fprintf(os.Stderr, "verify-catalog: %v\n", err)
 			os.Exit(1)
 		}
-		if err := catalog.WriteFile(*stateOut, append(out, '\n'), true); err != nil {
+		if err := catalog.WriteStateFile(*stateOut, append(out, '\n'), true); err != nil {
 			fmt.Fprintf(os.Stderr, "verify-catalog: %v\n", err)
 			os.Exit(1)
 		}
