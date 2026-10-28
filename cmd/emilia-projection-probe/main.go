@@ -17,6 +17,7 @@
 package main
 
 import (
+	"bytes"
 	"crypto/sha256"
 	_ "embed"
 	"encoding/base64"
@@ -38,6 +39,35 @@ func digestJSON(v any) string {
 	}
 	sum := sha256.Sum256(raw)
 	return "sha-256:" + hex.EncodeToString(sum[:])
+}
+
+// digestArtifactSet hashes the target artifacts as a canonical set: members are
+// ordered by their JCS bytes, so the order in which a carrier presents them is
+// not part of the encoding.  Duplicate members are rejected, not collapsed.
+func digestArtifactSet(targets []map[string]any) string {
+	type member struct {
+		raw []byte
+		v   map[string]any
+	}
+	members := make([]member, 0, len(targets))
+	for _, t := range targets {
+		raw, err := semantics.CanonicalJSON(t)
+		if err != nil {
+			panic(err)
+		}
+		members = append(members, member{raw: raw, v: t})
+	}
+	sort.Slice(members, func(i, j int) bool { return bytes.Compare(members[i].raw, members[j].raw) < 0 })
+	for i := 1; i < len(members); i++ {
+		if bytes.Equal(members[i-1].raw, members[i].raw) {
+			panic("artifact set contains duplicate members")
+		}
+	}
+	ordered := make([]map[string]any, len(members))
+	for i := range members {
+		ordered[i] = members[i].v
+	}
+	return digestJSON(ordered)
 }
 
 type bindingFixture struct {
@@ -106,6 +136,10 @@ type nativeCheckFixture struct {
 // profile pins "sha-256:<hex>" because that is the CLC representation; AEC-08
 // writes the same algorithm as "sha256:<hex>" and the profile normalizes the
 // spelling, without re-hashing, at the boundary.
+func reportDigestSet(targets []map[string]any) projection.Digest {
+	return projection.Digest(digestArtifactSet(targets))
+}
+
 func reportDigest(v any) projection.Digest {
 	raw, err := semantics.CanonicalJSON(v)
 	if err != nil {
@@ -174,7 +208,7 @@ func (f bindingFixture) tuple() map[string]any {
 		"relation": f.Relation,
 		"to": map[string]any{
 			"type":                f.Targets[0]["type"],
-			"artifact_set_digest": digestJSON(f.Targets),
+			"artifact_set_digest": digestArtifactSet(f.Targets),
 		},
 		"action_digest":         digestJSON(f.Action),
 		"subjects":              subjects,
@@ -553,7 +587,7 @@ func main() {
 		return projection.NativeCheckResult{
 			CheckID:               native.CheckID,
 			ComponentType:         native.ComponentType,
-			EvidenceDigest:        reportDigest(binding.Targets),
+			EvidenceDigest:        reportDigestSet(binding.Targets),
 			Verifier:              native.Verifier,
 			VerifierProfileDigest: projection.Digest(native.VerifierProfileDigest),
 			TrustSnapshotDigest:   reportDigest(binding.Trust),
@@ -596,7 +630,7 @@ func main() {
 			NativeCheckExpectations: []projection.NativeCheckExpectation{{
 				CheckID:        native.CheckID,
 				ComponentType:  native.ComponentType,
-				EvidenceDigest: reportDigest(binding.Targets),
+				EvidenceDigest: reportDigestSet(binding.Targets),
 			}},
 			NativeCheckResults: results,
 		})
