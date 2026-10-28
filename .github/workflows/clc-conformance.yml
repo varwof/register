@@ -129,3 +129,8 @@ jobs:
         env:
           CLC_AUTHORIZE_CHAIN_VECTORS: ${{ github.workspace }}/../capability/data/_vectors/clc-d/authorize-chain-vectors.json
         run: go run ./cmd/authorize-chain-vectors-run/
+
+      - name: CLC-D authorize cross-walk (carrier → projected grant → decision)
+        env:
+          CLC_AUTHORIZE_CROSSWALK_VECTORS: ${{ github.workspace }}/../capability/data/_vectors/clc-d/authorize-crosswalk-vectors.json
+        run: go run ./cmd/authorize-crosswalk-vectors-run/

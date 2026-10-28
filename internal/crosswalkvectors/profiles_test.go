@@ -43,11 +43,13 @@ func TestProfileDeclarations(t *testing.T) {
 	used, err := ProfilesInCorpora(
 		"../capability/data/_vectors/clc-v1/crosswalk-vectors.json",
 		"../capability/data/_vectors/clc-d/containment-crosswalk-vectors.json",
+		"../capability/data/_vectors/clc-d/authorize-crosswalk-vectors.json",
 	)
 	if err != nil {
 		alt := []string{
 			"../../../capability/data/_vectors/clc-v1/crosswalk-vectors.json",
 			"../../../capability/data/_vectors/clc-d/containment-crosswalk-vectors.json",
+			"../../../capability/data/_vectors/clc-d/authorize-crosswalk-vectors.json",
 		}
 		used, err = ProfilesInCorpora(alt...)
 		if err != nil {
