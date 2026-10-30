@@ -44,28 +44,53 @@ func digestJSON(v any) string {
 // digestArtifactSet hashes the target artifacts as a canonical set: members are
 // ordered by their JCS bytes, so the order in which a carrier presents them is
 // not part of the encoding.  Duplicate members are rejected, not collapsed.
-func digestArtifactSet(targets []map[string]any) string {
+func canonicalArtifactSet(targets []map[string]any) ([]map[string]any, error) {
 	type member struct {
 		raw []byte
 		v   map[string]any
+	}
+	if len(targets) == 0 {
+		return nil, fmt.Errorf("artifact set is empty")
 	}
 	members := make([]member, 0, len(targets))
 	for _, t := range targets {
 		raw, err := semantics.CanonicalJSON(t)
 		if err != nil {
-			panic(err)
+			return nil, err
 		}
 		members = append(members, member{raw: raw, v: t})
 	}
 	sort.Slice(members, func(i, j int) bool { return bytes.Compare(members[i].raw, members[j].raw) < 0 })
 	for i := 1; i < len(members); i++ {
 		if bytes.Equal(members[i-1].raw, members[i].raw) {
-			panic("artifact set contains duplicate members")
+			return nil, fmt.Errorf("artifact set contains duplicate members")
+		}
+	}
+	// The tuple carries one to.type for the whole set.  A set that mixes types
+	// cannot be represented faithfully, and picking targets[0] would make the
+	// subject depend on arrival order again.
+	for _, m := range members {
+		if typ, ok := m.v["type"].(string); !ok || typ == "" {
+			return nil, fmt.Errorf("artifact set member has no type")
+		}
+	}
+	for i := 1; i < len(members); i++ {
+		if members[i].v["type"] != members[0].v["type"] {
+			return nil, fmt.Errorf("artifact set mixes target types %v and %v",
+				members[0].v["type"], members[i].v["type"])
 		}
 	}
 	ordered := make([]map[string]any, len(members))
 	for i := range members {
 		ordered[i] = members[i].v
+	}
+	return ordered, nil
+}
+
+func digestArtifactSet(targets []map[string]any) string {
+	ordered, err := canonicalArtifactSet(targets)
+	if err != nil {
+		panic(err)
 	}
 	return digestJSON(ordered)
 }
@@ -190,6 +215,10 @@ func fixtureNow() time.Time {
 }
 
 func (f bindingFixture) tuple() map[string]any {
+	ordered, err := canonicalArtifactSet(f.Targets)
+	if err != nil {
+		panic(err)
+	}
 	subjects := make([]string, 0, len(f.Targets))
 	issuedAt := []string{f.Source["issued_at"].(string)}
 	for _, target := range f.Targets {
@@ -207,8 +236,8 @@ func (f bindingFixture) tuple() map[string]any {
 		},
 		"relation": f.Relation,
 		"to": map[string]any{
-			"type":                f.Targets[0]["type"],
-			"artifact_set_digest": digestArtifactSet(f.Targets),
+			"type":                ordered[0]["type"],
+			"artifact_set_digest": digestJSON(ordered),
 		},
 		"action_digest":         digestJSON(f.Action),
 		"subjects":              subjects,
@@ -519,6 +548,21 @@ func main() {
 	fmt.Println("4. Binding identity derivation and boundary")
 	fmt.Println("Fixtures: synthetic AEC-shaped artifacts, not production bytes")
 	expectedBindingSubject := fixtureDoc.ExpectedSubject
+	reversed := bindingFixture
+	reversed.Targets = make([]map[string]any, len(bindingFixture.Targets))
+	for i, target := range bindingFixture.Targets {
+		reversed.Targets[len(bindingFixture.Targets)-1-i] = target
+	}
+	duplicated := append(append([]map[string]any{}, bindingFixture.Targets...), bindingFixture.Targets[0])
+	_, duplicateErr := canonicalArtifactSet(duplicated)
+	mixed := append([]map[string]any{}, bindingFixture.Targets...)
+	mixed[1] = map[string]any{}
+	for k, v := range bindingFixture.Targets[1] {
+		mixed[1][k] = v
+	}
+	mixed[1]["type"] = "policy-permit"
+	_, mixedErr := canonicalArtifactSet(mixed)
+	_, emptyErr := canonicalArtifactSet(nil)
 	bindingCases := []struct {
 		caseID string
 		name   string
@@ -530,6 +574,30 @@ func main() {
 			"base relation tuple has the pinned subject",
 			expectedBindingSubject,
 			baseBindingSubject,
+		},
+		{
+			"EMI-BIND-007",
+			"artifact set order does not change the relation subject",
+			"unchanged",
+			map[bool]string{true: "unchanged", false: "different"}[bindingSubject(reversed) == baseBindingSubject],
+		},
+		{
+			"EMI-BIND-008",
+			"duplicate artifact member rejected",
+			"rejected",
+			map[bool]string{true: "rejected", false: "accepted"}[duplicateErr != nil],
+		},
+		{
+			"EMI-BIND-009",
+			"mixed target types rejected",
+			"rejected",
+			map[bool]string{true: "rejected", false: "accepted"}[mixedErr != nil],
+		},
+		{
+			"EMI-BIND-010",
+			"empty artifact set rejected",
+			"rejected",
+			map[bool]string{true: "rejected", false: "accepted"}[emptyErr != nil],
 		},
 	}
 	mutationIDs := map[string]string{
