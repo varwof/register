@@ -45,3 +45,26 @@ func TestUnknownProfileIsRejected(t *testing.T) {
 		t.Fatal("an unknown cross-walk profile must be rejected")
 	}
 }
+
+// TestIICPProfileMapping pins the IICP capability-set mapping: the profile
+// carries id, params and constraints through unchanged and leaves the trace
+// linkage to checkProfilePair.
+func TestIICPProfileMapping(t *testing.T) {
+	src := []byte(`{"grant_id":"g-1","capabilities":[{"id":"a/b:c:d","params":{"n":1},"constraints":["x:y"]}]}`)
+	grants, err := MapProfile("iicp->clc-v1", src)
+	if err != nil {
+		t.Fatalf("map: %v", err)
+	}
+	if len(grants) != 1 {
+		t.Fatalf("mapped %d grants, want 1", len(grants))
+	}
+	if grants[0].ID != "a/b:c:d" {
+		t.Fatalf("id = %q", grants[0].ID)
+	}
+	if got := grants[0].Params["n"]; got != float64(1) {
+		t.Fatalf("params[n] = %v", got)
+	}
+	if len(grants[0].Constraints) != 1 || grants[0].Constraints[0] != "x:y" {
+		t.Fatalf("constraints = %v", grants[0].Constraints)
+	}
+}

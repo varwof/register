@@ -202,6 +202,35 @@ func MapProfile(profile string, source json.RawMessage) ([]semantics.Grant, erro
 		}
 		return grants, nil
 
+	case "iicp->clc-v1":
+		// IICP monotonic trace: a grant carries capabilities[] entries of
+		// {id, params?, constraints?}.  The trace linkage (grant_id /
+		// parent_grant_id) is a carrier concept the CLC relation cannot see,
+		// so checkProfilePair enforces it before the pair reaches the
+		// relation; the work order is the carrier's own execution binding and
+		// stays with the carrier.  This profile maps the capability set only
+		// and makes no containment claim about either.  The containment runner
+		// requires exactly one mapped grant per side, so a multi-capability
+		// source is a profile-level error there.
+		var icp struct {
+			Capabilities []struct {
+				ID          string         `json:"id"`
+				Params      map[string]any `json:"params,omitempty"`
+				Constraints []string       `json:"constraints,omitempty"`
+			} `json:"capabilities"`
+		}
+		if err := json.Unmarshal(source, &icp); err != nil {
+			return nil, err
+		}
+		grants := make([]semantics.Grant, 0, len(icp.Capabilities))
+		for _, c := range icp.Capabilities {
+			if c.ID == "" {
+				return nil, fmt.Errorf("iicp: capability id is required")
+			}
+			grants = append(grants, semantics.Grant{ID: c.ID, Params: c.Params, Constraints: c.Constraints})
+		}
+		return grants, nil
+
 	case "emilia-aeg->clc-v1":
 		// Action Evidence Graph: a node/edge names the capability class it is about.
 		var aeg struct {
