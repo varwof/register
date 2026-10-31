@@ -1,0 +1,188 @@
+{
+  "@version": "EMILIA-BINDING-FIXTURE-v2",
+  "now": "2026-09-13T12:00:00Z",
+  "status_schema_document": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://emiliaprotocol.ai/schemas/ep-quorum-status-v1.json",
+    "title": "EP quorum status result v1",
+    "type": "object",
+    "required": [
+      "type",
+      "artifact_id",
+      "subject",
+      "issued_at",
+      "verified"
+    ],
+    "properties": {
+      "type": {
+        "const": "ep-quorum"
+      },
+      "artifact_id": {
+        "type": "string"
+      },
+      "subject": {
+        "type": "string"
+      },
+      "issued_at": {
+        "type": "string"
+      },
+      "verified": {
+        "type": "boolean"
+      }
+    },
+    "additionalProperties": true
+  },
+  "accepted_status_schema_digests": [
+    "sha-256:5c06381bf0efd2375f78234660c980c5e2e30dff292a5d0642e183949a163412"
+  ],
+  "binding": {
+    "source": {
+      "type": "policy-permit",
+      "artifact_id": "permit-7",
+      "policy_generation": "policy-7",
+      "subject": "policy",
+      "issued_at": "2026-09-13T11:59:00Z",
+      "verified": true
+    },
+    "targets": [
+      {
+        "type": "ep-quorum",
+        "artifact_id": "approval-alice",
+        "subject": "alice",
+        "issued_at": "2026-09-13T11:59:30Z",
+        "verified": true,
+        "status_schema": {
+          "id": "https://emiliaprotocol.ai/schemas/ep-quorum-status-v1.json",
+          "version": "1",
+          "digest": "sha-256:5c06381bf0efd2375f78234660c980c5e2e30dff292a5d0642e183949a163412"
+        }
+      },
+      {
+        "type": "ep-quorum",
+        "artifact_id": "approval-bob",
+        "subject": "bob",
+        "issued_at": "2026-09-13T11:59:40Z",
+        "verified": true,
+        "status_schema": {
+          "id": "https://emiliaprotocol.ai/schemas/ep-quorum-status-v1.json",
+          "version": "1",
+          "digest": "sha-256:5c06381bf0efd2375f78234660c980c5e2e30dff292a5d0642e183949a163412"
+        }
+      }
+    ],
+    "action": {
+      "type": "tool.call.1",
+      "tool": "payments.transfer",
+      "args": {
+        "amount": 3000,
+        "currency": "CNY"
+      }
+    },
+    "status": {
+      "outcome": "valid",
+      "source": "aeb-status",
+      "checked_at": "2026-09-13T12:00:00Z",
+      "valid_until": "2026-09-13T12:01:00Z",
+      "revocation_generation": "rev-42"
+    },
+    "trust": {
+      "verifier": "native-verifier",
+      "result": "verified",
+      "verifier_profile_digest": "sha-256:3f1c2d6a1b0e5c9d7a4f8b2e6c1d9a3f5b7e0c2d4a6f8b1e3c5d7a9f0b2e4c6d"
+    },
+    "relation": "permits",
+    "requirement_digest": "sha-256:c55a4dae12bfdc8e283d0006ee71cedf5acf04447380b628af490f8f66d3c3fc",
+    "trust_inputs": {
+      "anchors": [
+        "native-verifier-root-2026"
+      ],
+      "revocation_source": "aeb-status",
+      "revocation_generation": "rev-42",
+      "verifier_profile": "emilia-native-trust-v1"
+    },
+    "trust_snapshot_digest": "sha-256:06d09b694b38fe8ba1bf691f66f277184b830a26f5657d1a0444f4766bd851ce"
+  },
+  "native_status_results": [
+    {
+      "artifact_id": "approval-alice",
+      "status_schema": {
+        "id": "https://emiliaprotocol.ai/schemas/ep-quorum-status-v1.json",
+        "version": "1",
+        "digest": "sha-256:5c06381bf0efd2375f78234660c980c5e2e30dff292a5d0642e183949a163412"
+      }
+    },
+    {
+      "artifact_id": "approval-bob",
+      "status_schema": {
+        "id": "https://emiliaprotocol.ai/schemas/ep-quorum-status-v1.json",
+        "version": "1",
+        "digest": "sha-256:5c06381bf0efd2375f78234660c980c5e2e30dff292a5d0642e183949a163412"
+      }
+    }
+  ],
+  "schema_cases": [
+    {
+      "id": "EMI-SCHEMA-001",
+      "name": "schema-bearing set accepted",
+      "mutation": "none",
+      "expected": "accept"
+    },
+    {
+      "id": "EMI-SCHEMA-002",
+      "name": "missing status_schema rejected",
+      "mutation": "missing",
+      "expected": "reject"
+    },
+    {
+      "id": "EMI-SCHEMA-003",
+      "name": "unpinned schema digest rejected",
+      "mutation": "unpinned",
+      "expected": "reject"
+    },
+    {
+      "id": "EMI-SCHEMA-004",
+      "name": "omitted carrier rejected",
+      "mutation": "omitted",
+      "expected": "reject"
+    },
+    {
+      "id": "EMI-SCHEMA-005",
+      "name": "result schema differs from its carrier",
+      "mutation": "schema-mismatch",
+      "expected": "reject"
+    }
+  ],
+  "completeness_cases": [
+    {
+      "id": "EMI-COMP-001",
+      "name": "SATISFIED but native checks incomplete is refused",
+      "satisfaction": "SATISFIED",
+      "complete": false,
+      "required_outcomes": [
+        "success"
+      ],
+      "expected": "reject"
+    },
+    {
+      "id": "EMI-COMP-002",
+      "name": "complete but required check failed is refused",
+      "satisfaction": "UNSATISFIED",
+      "complete": true,
+      "required_outcomes": [
+        "failed"
+      ],
+      "expected": "reject"
+    },
+    {
+      "id": "EMI-COMP-003",
+      "name": "complete and required check succeeded is accepted",
+      "satisfaction": "SATISFIED",
+      "complete": true,
+      "required_outcomes": [
+        "success"
+      ],
+      "expected": "accept"
+    }
+  ],
+  "expected_subject": "eMgM0gUtM5K0aH-x5ykSP0FrrKNUK8zTfaPd9DmDqJg"
+}

@@ -184,6 +184,40 @@ func digestLabel(d *semantics.Digest) string {
 //go:embed testdata/emilia-binding-fixture-v1.json
 var bindingFixtureJSON []byte
 
+//go:embed testdata/emilia-binding-fixture-v2.json
+var schemaBindingJSON []byte
+
+type schemaResult struct {
+	ArtifactID   string         `json:"artifact_id"`
+	StatusSchema map[string]any `json:"status_schema"`
+}
+
+type schemaCase struct {
+	ID       string `json:"id"`
+	Name     string `json:"name"`
+	Mutation string `json:"mutation"`
+	Expected string `json:"expected"`
+}
+
+type completenessCase struct {
+	ID               string   `json:"id"`
+	Name             string   `json:"name"`
+	Satisfaction     string   `json:"satisfaction"`
+	Complete         bool     `json:"complete"`
+	RequiredOutcomes []string `json:"required_outcomes"`
+	Expected         string   `json:"expected"`
+}
+
+type schemaBindingDocument struct {
+	StatusSchemaDocument        map[string]any     `json:"status_schema_document"`
+	AcceptedStatusSchemaDigests []string           `json:"accepted_status_schema_digests"`
+	Binding                     bindingFixture     `json:"binding"`
+	NativeStatusResults         []schemaResult     `json:"native_status_results"`
+	SchemaCases                 []schemaCase       `json:"schema_cases"`
+	CompletenessCases           []completenessCase `json:"completeness_cases"`
+	ExpectedSubject             string             `json:"expected_subject"`
+}
+
 func loadBindingFixture() bindingFixtureDocument {
 	var doc bindingFixtureDocument
 	if err := json.Unmarshal(bindingFixtureJSON, &doc); err != nil {
@@ -256,6 +290,186 @@ func bindingSubject(f bindingFixture) string {
 	}
 	sum := sha256.Sum256(raw)
 	return base64.RawURLEncoding.EncodeToString(sum[:])
+}
+
+func loadSchemaBindingFixture() schemaBindingDocument {
+	var doc schemaBindingDocument
+	if err := json.Unmarshal(schemaBindingJSON, &doc); err != nil {
+		panic(err)
+	}
+	return doc
+}
+
+func cloneBinding(f bindingFixture) bindingFixture {
+	raw, err := json.Marshal(f)
+	if err != nil {
+		panic(err)
+	}
+	var out bindingFixture
+	if err := json.Unmarshal(raw, &out); err != nil {
+		panic(err)
+	}
+	return out
+}
+
+func cloneResults(in []schemaResult) []schemaResult {
+	raw, err := json.Marshal(in)
+	if err != nil {
+		panic(err)
+	}
+	var out []schemaResult
+	if err := json.Unmarshal(raw, &out); err != nil {
+		panic(err)
+	}
+	return out
+}
+
+// sameSchema compares two status schemas by their canonical digest, so identity
+// is decided by content rather than by the claim that two objects look alike.
+func sameSchema(a, b map[string]any) bool {
+	return digestJSON(a) == digestJSON(b)
+}
+
+// schemaCarrierError applies the profile's schema-identity and membership
+// rules to a schema-bearing fixture. It is a profile-level check, not a CLC
+// verdict: the tuple stays opaque to CLC. Every uncertain case is an error.
+func schemaCarrierError(f schemaBindingDocument, binding bindingFixture, results []schemaResult) error {
+	if len(f.StatusSchemaDocument) == 0 {
+		return fmt.Errorf("status_schema_document is missing")
+	}
+	if len(f.AcceptedStatusSchemaDigests) == 0 {
+		return fmt.Errorf("accepted_status_schema_digests is empty")
+	}
+	docDigest := digestJSON(f.StatusSchemaDocument)
+	docID, _ := f.StatusSchemaDocument["$id"].(string)
+	accepted := make(map[string]bool, len(f.AcceptedStatusSchemaDigests))
+	for _, d := range f.AcceptedStatusSchemaDigests {
+		if d == "" {
+			return fmt.Errorf("accepted schema digest is empty")
+		}
+		accepted[d] = true
+	}
+	if len(binding.Targets) == 0 {
+		return fmt.Errorf("target set is empty")
+	}
+	docType := ""
+	if props, ok := f.StatusSchemaDocument["properties"].(map[string]any); ok {
+		if typeSpec, ok := props["type"].(map[string]any); ok {
+			docType, _ = typeSpec["const"].(string)
+		}
+	}
+	members := make(map[string]map[string]any, len(binding.Targets))
+	for _, t := range binding.Targets {
+		id, _ := t["artifact_id"].(string)
+		if id == "" {
+			return fmt.Errorf("target has no artifact_id")
+		}
+		if _, exists := members[id]; exists {
+			return fmt.Errorf("duplicate target artifact_id %q", id)
+		}
+		if docType != "" {
+			if typ, _ := t["type"].(string); typ != docType {
+				return fmt.Errorf("target %s: type %q does not match the pinned schema type %q", id, typ, docType)
+			}
+		}
+		ss, ok := t["status_schema"].(map[string]any)
+		if !ok {
+			return fmt.Errorf("target %s: missing status_schema", id)
+		}
+		for _, k := range []string{"id", "version", "digest"} {
+			v, ok := ss[k].(string)
+			if !ok || v == "" {
+				return fmt.Errorf("target %s: status_schema.%s is empty", id, k)
+			}
+		}
+		if docID != "" {
+			if ssID, _ := ss["id"].(string); ssID != docID {
+				return fmt.Errorf("target %s: status_schema.id does not name the pinned document", id)
+			}
+		}
+		digest, _ := ss["digest"].(string)
+		if digest != docDigest {
+			return fmt.Errorf("target %s: schema digest does not pin the document", id)
+		}
+		if !accepted[digest] {
+			return fmt.Errorf("target %s: schema digest is not in the accepted pin set", id)
+		}
+		members[id] = ss
+	}
+	for _, r := range results {
+		if r.ArtifactID == "" {
+			return fmt.Errorf("native result has no artifact_id")
+		}
+		targetSchema, ok := members[r.ArtifactID]
+		if !ok {
+			return fmt.Errorf("result %s: carrier is not a member of the target set", r.ArtifactID)
+		}
+		if !sameSchema(targetSchema, r.StatusSchema) {
+			return fmt.Errorf("result %s: schema identity differs from its carrier", r.ArtifactID)
+		}
+	}
+	return nil
+}
+
+func relianceAccepts(satisfaction string, complete bool, outcomes []string) string {
+	if len(outcomes) == 0 || satisfaction != "SATISFIED" || !complete {
+		return "reject"
+	}
+	for _, outcome := range outcomes {
+		if outcome != "success" {
+			return "reject"
+		}
+	}
+	return "accept"
+}
+
+func schemaCases() {
+	f := loadSchemaBindingFixture()
+	fmt.Printf("%s %s %-55s want=%s got=%s\n", map[bool]string{true: "PASS", false: "FAIL"}[bindingSubject(f.Binding) == f.ExpectedSubject], "EMI-BIND-011", "schema-bearing set has a new subject", f.ExpectedSubject, bindingSubject(f.Binding))
+	for _, c := range f.SchemaCases {
+		binding := cloneBinding(f.Binding)
+		results := cloneResults(f.NativeStatusResults)
+		switch c.Mutation {
+		case "none":
+		case "missing":
+			if len(binding.Targets) > 0 {
+				delete(binding.Targets[0], "status_schema")
+			}
+		case "unpinned":
+			if len(binding.Targets) > 0 {
+				ss, _ := binding.Targets[0]["status_schema"].(map[string]any)
+				ss["digest"] = "sha-256:" + strings.Repeat("0", 64)
+			}
+		case "schema-mismatch":
+			if len(results) > 0 {
+				results[0].StatusSchema["id"] = "https://emiliaprotocol.ai/schemas/other-status-v1.json"
+			}
+		case "omitted":
+			results = append(results, schemaResult{
+				ArtifactID:   "approval-carol",
+				StatusSchema: map[string]any{"id": "https://emiliaprotocol.ai/schemas/ep-quorum-status-v1.json", "version": "1", "digest": "sha-256:" + strings.Repeat("0", 64)},
+			})
+		default:
+			panic(fmt.Sprintf("unknown schema mutation %q", c.Mutation))
+		}
+		got := "accept"
+		if err := schemaCarrierError(f, binding, results); err != nil {
+			got = "reject"
+		}
+		status := "PASS"
+		if got != c.Expected {
+			status = "FAIL"
+		}
+		fmt.Printf("%s %s %-55s want=%s got=%s\n", status, c.ID, c.Name, c.Expected, got)
+	}
+	for _, c := range f.CompletenessCases {
+		got := relianceAccepts(c.Satisfaction, c.Complete, c.RequiredOutcomes)
+		status := "PASS"
+		if got != c.Expected {
+			status = "FAIL"
+		}
+		fmt.Printf("%s %s %-55s want=%s got=%s\n", status, c.ID, c.Name, c.Expected, got)
+	}
 }
 
 func mutatedBindingFixture(kind string) bindingFixture {
@@ -642,6 +856,10 @@ func main() {
 		}
 		fmt.Printf("%s %s %-55s want=%s got=%s\n", status, c.caseID, c.name, c.want, c.got)
 	}
+	fmt.Println()
+
+	fmt.Println("4b. Schema-bearing fixture (status_schema and reliance completeness)")
+	schemaCases()
 	fmt.Println()
 
 	// Section 5 is informational, not a new set of case IDs: the cross-language
