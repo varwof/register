@@ -426,6 +426,15 @@ func relianceAccepts(satisfaction string, complete bool, outcomes []string) stri
 func schemaCases() {
 	f := loadSchemaBindingFixture()
 	fmt.Printf("%s %s %-55s want=%s got=%s\n", map[bool]string{true: "PASS", false: "FAIL"}[bindingSubject(f.Binding) == f.ExpectedSubject], "EMI-BIND-011", "schema-bearing set has a new subject", f.ExpectedSubject, bindingSubject(f.Binding))
+	// As with the projection cases, the mutation name is not evidence that the
+	// matching rule fired: each one carries the reason it must produce.
+	schemaReason := map[string]string{
+		"none":            "",
+		"missing":         "missing status_schema",
+		"unpinned":        "does not pin",
+		"schema-mismatch": "differs from its carrier",
+		"omitted":         "not a member of the target set",
+	}
 	for _, c := range f.SchemaCases {
 		binding := cloneBinding(f.Binding)
 		results := cloneResults(f.NativeStatusResults)
@@ -452,9 +461,13 @@ func schemaCases() {
 		default:
 			panic(fmt.Sprintf("unknown schema mutation %q", c.Mutation))
 		}
+		carrierErr := schemaCarrierError(f, binding, results)
 		got := "accept"
-		if err := schemaCarrierError(f, binding, results); err != nil {
+		if carrierErr != nil {
 			got = "reject"
+			if want := schemaReason[c.Mutation]; want != "" && !strings.Contains(carrierErr.Error(), want) {
+				got = "rejected-other-reason"
+			}
 		}
 		status := "PASS"
 		if got != c.Expected {
@@ -644,6 +657,32 @@ func main() {
 			doc["status_required"] = []any{"unpinned"}
 		}},
 	}
+	// A rejection is not evidence that the rule the case names is the rule that
+	// fired. Each case carries the reason it must produce, so a validation added
+	// earlier cannot leave the case passing for a different reason.
+	negativeReason := map[string]string{
+		"EMI-PROJ-004": "unsupported AEC content",
+		"EMI-PROJ-005": "no pinned CLC role mapping",
+		"EMI-PROJ-006": "expression longer than 512 bytes",
+		"EMI-PROJ-007": "unsupported AEC role constraint",
+		"EMI-PROJ-008": "subject_id_source must be native-verifier",
+		"EMI-PROJ-009": "from_type is empty",
+		"EMI-PROJ-010": "quorum is greater than one",
+		"EMI-PROJ-011": "requirement_expression",
+		"EMI-PROJ-012": "role_constraints",
+		"EMI-PROJ-013": "non-negative integer",
+		"EMI-PROJ-014": "no projector matched",
+		"EMI-PROJ-015": "requirement_id required",
+		"EMI-PROJ-016": "outside the AEC identifier set",
+		"EMI-PROJ-017": "limit is 256",
+		"EMI-PROJ-018": "required_bindings",
+		"EMI-PROJ-019": "no pinned CLC role mapping",
+	}
+	for _, c := range negativeCases {
+		if negativeReason[c.caseID] == "" {
+			panic("negative case without an expected reason: " + c.caseID)
+		}
+	}
 	for _, c := range negativeCases {
 		var doc map[string]any
 		if err := json.Unmarshal(source, &doc); err != nil {
@@ -661,6 +700,8 @@ func main() {
 		got := "rejected"
 		if projectErr == nil {
 			got = "accepted"
+		} else if want := negativeReason[c.caseID]; !strings.Contains(projectErr.Error(), want) {
+			got = "rejected-other-reason"
 		}
 		status := "PASS"
 		if got != "rejected" {
