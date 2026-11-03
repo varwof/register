@@ -81,12 +81,52 @@ func TestRelianceFailsClosed(t *testing.T) {
 	}{
 		{"empty outcome set", "SATISFIED", true, nil},
 		{"satisfied but incomplete", "SATISFIED", false, []string{"success"}},
-		{"complete but failed", "UNSATISFIED", true, []string{"failed"}},
+		{"complete but failed", "SATISFIED", true, []string{"failed"}},
 		{"unknown outcome", "SATISFIED", true, []string{"unknown"}},
 		{"missing outcome", "SATISFIED", true, []string{""}},
 	} {
 		if got := relianceAccepts(tc.satisfaction, tc.complete, tc.outcomes); got != "reject" {
 			t.Fatalf("%s: %q", tc.name, got)
+		}
+	}
+}
+
+// TestCompletenessCasesExerciseTheirNamedCondition guards the fixture rather
+// than the rule. A case whose inputs already fail an earlier check passes for
+// the wrong reason and prints the same want/got line either way, so only the
+// fixture bytes show the difference. EMI-COMP-002 shipped with satisfaction
+// UNSATISFIED, which masked the required-outcome check entirely.
+func TestCompletenessCasesExerciseTheirNamedCondition(t *testing.T) {
+	want := map[string]struct {
+		satisfaction  string
+		complete      bool
+		failedOutcome bool
+	}{
+		"EMI-COMP-001": {"SATISFIED", false, false},
+		"EMI-COMP-002": {"SATISFIED", true, true},
+		"EMI-COMP-003": {"SATISFIED", true, false},
+	}
+	cases := loadSchemaBindingFixture().CompletenessCases
+	if len(cases) != len(want) {
+		t.Fatalf("fixture carries %d completeness cases, want %d", len(cases), len(want))
+	}
+	for _, c := range cases {
+		w, ok := want[c.ID]
+		if !ok {
+			t.Fatalf("unexpected completeness case %q", c.ID)
+		}
+		if c.Satisfaction != w.satisfaction || c.Complete != w.complete {
+			t.Fatalf("%s: satisfaction=%q complete=%v, want %q/%v",
+				c.ID, c.Satisfaction, c.Complete, w.satisfaction, w.complete)
+		}
+		failedOutcome := false
+		for _, outcome := range c.RequiredOutcomes {
+			if outcome != "success" {
+				failedOutcome = true
+			}
+		}
+		if failedOutcome != w.failedOutcome {
+			t.Fatalf("%s: failed required outcome = %v, want %v", c.ID, failedOutcome, w.failedOutcome)
 		}
 	}
 }

@@ -166,7 +166,7 @@
     {
       "id": "EMI-COMP-002",
       "name": "complete but required check failed is refused",
-      "satisfaction": "UNSATISFIED",
+      "satisfaction": "SATISFIED",
       "complete": true,
       "required_outcomes": [
         "failed"
