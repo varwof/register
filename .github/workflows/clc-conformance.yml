@@ -9,6 +9,14 @@ on:
     branches: [main]
   pull_request:
 
+env:
+  # The corpus commit this workflow certifies. Pinned rather than main so a run
+  # states which vectors it passed: a claim that cannot name its corpus is not a
+  # claim. Bump this together with the corpora; capability's own clc-vectors
+  # workflow checks this repository against capability main, so a corpus change
+  # is still exercised before the pin moves.
+  CLC_CAPABILITY_SHA: 6e9d840d17dc8d3c6a2161c71a5a364a5e1f1b20
+
 jobs:
   vectors:
     runs-on: ubuntu-latest
@@ -21,8 +29,23 @@ jobs:
 
       - name: Fetch CLC vectors and cross-language dependencies
         run: |
-          git clone --depth 1 https://github.com/varwof/capability.git ../capability
+          set -euo pipefail
+          git init -q ../capability
+          git -C ../capability remote add origin https://github.com/varwof/capability.git
+          if ! git -C ../capability fetch -q --depth 1 origin "$CLC_CAPABILITY_SHA"; then
+            echo "shallow fetch by SHA refused; fetching the branch instead"
+            git -C ../capability fetch -q origin '+refs/heads/*:refs/remotes/origin/*'
+          fi
+          git -C ../capability checkout -q "$CLC_CAPABILITY_SHA"
+          got="$(git -C ../capability rev-parse HEAD)"
+          test "$got" = "$CLC_CAPABILITY_SHA"
           git clone --depth 1 https://github.com/varwof/aic-capability-demo.git ../aic-capability-demo
+
+      - name: Record the corpus revision
+        run: |
+          git -C ../capability rev-parse HEAD
+          sha256sum ../capability/data/_vectors/clc-v1/vectors.json \
+                    ../capability/data/_vectors/clc-v1/property-cases.json
 
       - name: gofmt
         run: test -z "$(gofmt -l .)"
