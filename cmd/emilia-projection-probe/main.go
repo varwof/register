@@ -324,6 +324,46 @@ func cloneResults(in []schemaResult) []schemaResult {
 	return out
 }
 
+// tupleSubject hashes an already-built tuple, so a variant can be compared with
+// the tuple the fixture produces without rebuilding the binding.
+func tupleSubject(tuple map[string]any) string {
+	raw, err := semantics.CanonicalJSON(tuple)
+	if err != nil {
+		panic(err)
+	}
+	sum := sha256.Sum256(raw)
+	return base64.RawURLEncoding.EncodeToString(sum[:])
+}
+
+// dedupTuple removes repeated entries from the two arrays that carry one entry
+// per artifact.  Nothing computes a subject this way; it exists to show that an
+// implementation that did would land on a different one.
+func dedupTuple(tuple map[string]any) map[string]any {
+	raw, err := json.Marshal(tuple)
+	if err != nil {
+		panic(err)
+	}
+	var out map[string]any
+	if err := json.Unmarshal(raw, &out); err != nil {
+		panic(err)
+	}
+	for _, key := range []string{"subjects", "evidence_issued_at"} {
+		list, _ := out[key].([]any)
+		seen := make(map[string]bool, len(list))
+		unique := make([]any, 0, len(list))
+		for _, v := range list {
+			str, _ := v.(string)
+			if seen[str] {
+				continue
+			}
+			seen[str] = true
+			unique = append(unique, v)
+		}
+		out[key] = unique
+	}
+	return out
+}
+
 // sameSchema compares two status schemas by their canonical digest, so identity
 // is decided by content rather than by the claim that two objects look alike.
 func sameSchema(a, b map[string]any) bool {
@@ -808,6 +848,33 @@ func main() {
 	for i, target := range bindingFixture.Targets {
 		reversed.Targets[len(bindingFixture.Targets)-1-i] = target
 	}
+	// Two distinct target artifacts may name the same subject and share a
+	// timestamp.  Both arrays keep the repeats; a set that de-duplicated either
+	// one would hash to a different tuple subject.
+	sharedSubjectBinding := cloneBinding(baseBindingFixture())
+	sharedSubjectBinding.Targets = []map[string]any{
+		{
+			"type":        "ep-quorum",
+			"artifact_id": "approval-alice-1",
+			"subject":     "alice",
+			"issued_at":   "2026-09-13T11:59:30Z",
+			"verified":    true,
+		},
+		{
+			"type":        "ep-quorum",
+			"artifact_id": "approval-alice-2",
+			"subject":     "alice",
+			"issued_at":   "2026-09-13T11:59:30Z",
+			"verified":    true,
+		},
+	}
+	sharedTuple := sharedSubjectBinding.tuple()
+	sharedSubjects := sharedTuple["subjects"].([]string)
+	sharedTimes := sharedTuple["evidence_issued_at"].([]string)
+	sharedKept := len(sharedSubjects) == 2 && sharedSubjects[0] == sharedSubjects[1] &&
+		len(sharedTimes) == 3 && sharedTimes[1] == sharedTimes[2] &&
+		tupleSubject(sharedTuple) != tupleSubject(dedupTuple(sharedTuple))
+
 	duplicated := append(append([]map[string]any{}, bindingFixture.Targets...), bindingFixture.Targets[0])
 	_, duplicateErr := canonicalArtifactSet(duplicated)
 	mixed := append([]map[string]any{}, bindingFixture.Targets...)
@@ -835,6 +902,12 @@ func main() {
 			"artifact set order does not change the relation subject",
 			"unchanged",
 			map[bool]string{true: "unchanged", false: "different"}[bindingSubject(reversed) == baseBindingSubject],
+		},
+		{
+			"EMI-BIND-012",
+			"two targets sharing a subject and timestamp keep both entries",
+			"repeats-kept",
+			map[bool]string{true: "repeats-kept", false: "deduplicated-or-other"}[sharedKept],
 		},
 		{
 			"EMI-BIND-008",
