@@ -178,6 +178,12 @@ func ValidateCapabilityID(id string) error {
 			if i != len(parts)-1 {
 				return ErrUnsupportedWildcard
 			}
+			// §3: a trailing * needs a non-empty action before it.  A bare
+			// scheme:* names no class and is a forbidden shape, not a
+			// namespace comparison (entail-007/-008).
+			if len(parts) < 3 {
+				return ErrUnsupportedWildcard
+			}
 		}
 	}
 	// Must have at least scheme:action
